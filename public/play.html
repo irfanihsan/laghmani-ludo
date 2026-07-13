@@ -372,9 +372,29 @@ socket.on("kicked",()=>{
   location.href="/";
 });
 
+function runPhoneHaptics(state, previousState){
+  // Vibration is supported on many Android browsers. iOS Safari currently
+  // ignores navigator.vibrate, so haptics must always remain optional.
+  try{
+    if(typeof navigator.vibrate!=="function") return;
+    const gs=state&&state.game;
+    const prevGs=previousState&&previousState.game;
+    if(!gs) return;
+    const mi=gs.players.findIndex(p=>p.id===myId);
+    const prevMi=prevGs?prevGs.players.findIndex(p=>p.id===myId):-1;
+    const turnStarted=mi>=0&&gs.current===mi&&(!prevGs||prevMi<0||prevGs.current!==prevMi||previousState.phase!==state.phase);
+    const eventChanged=gs.lastEvent&&(!prevGs||JSON.stringify(gs.lastEvent)!==JSON.stringify(prevGs.lastEvent));
+    const rollChanged=gs.lastRoll&&(!prevGs||!prevGs.lastRoll||gs.lastRoll.id!==prevGs.lastRoll.id);
+    if(eventChanged&&gs.lastEvent.type==="capture") navigator.vibrate([90,45,140]);
+    else if(eventChanged&&gs.lastEvent.type==="foul") navigator.vibrate([180,70,180,70,260]);
+    else if(rollChanged&&gs.lastRoll.finalFace===6) navigator.vibrate([70,35,70]);
+    else if(turnStarted) navigator.vibrate(70);
+  }catch(_err){ /* Optional haptics must never interrupt game updates. */ }
+}
+
 function handleStateUpdate(state){
-  if(state.code!==roomCode) return;
-  lastState=state; phoneHaptics(state);
+  if(!state||state.code!==roomCode) return;
+  const previousState=lastState;
   const me=state.players.find(p=>p.id===myId); if(me&&me.avatar){avatarUrl=me.avatar;setupGameUI();document.getElementById("avatarThumb").innerHTML=`<img src="${me.avatar}"/>`;}
   const taken=state.players.map(p=>p.colour);
   document.querySelectorAll(".c-opt").forEach(o=>{
@@ -390,9 +410,28 @@ function handleStateUpdate(state){
   if(state.phase==="playing"||state.phase==="finished"){
     show("screenGame");
     renderGame(state);
+  }else if(state.phase==="lobby"){
+    show("screenLobby");
   }
+  // Store the state only after the essential UI update succeeds. Haptics run
+  // afterwards so unsupported browser APIs can never strand the controller.
+  lastState=state;
+  runPhoneHaptics(state,previousState);
 }
-socket.on("state:update",handleStateUpdate);
+socket.on("state:update",state=>{
+  try{ handleStateUpdate(state); }
+  catch(err){
+    console.error("Controller state update failed",err,state);
+    showErr("Controller update failed — reconnecting…");
+    setTimeout(()=>{
+      if(socket.connected&&roomCode&&myId&&myToken){
+        socket.emit("player:rejoin",{code:roomCode,playerId:myId,playerToken:myToken},res=>{
+          if(res&&res.ok&&res.state){ try{ handleStateUpdate(res.state); }catch(e){ console.error(e); } }
+        });
+      }
+    },600);
+  }
+});
 
 function myIdx(state){ return state.players.findIndex(p=>p.id===myId); }
 function myGameIdx(state){ return state.game?state.game.players.findIndex(p=>p.id===myId):-1; }
