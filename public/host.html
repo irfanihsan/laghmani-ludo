@@ -314,10 +314,13 @@ const COLOUR_HEX={G:"#22c55e",Y:"#eab308",B:"#3b82f6",R:"#ef4444"};
 const HOME_CELLS=[];
 for(let r=6;r<=8;r++) for(let c=6;c<=8;c++) HOME_CELLS.push({r,c});
 
+
+const SPEED_LEVELS={1:{name:"Relaxed",dice:1600,hop:260,capture:1200,fx:1800},2:{name:"Standard",dice:1200,hop:190,capture:900,fx:1500},3:{name:"Quick",dice:850,hop:130,capture:650,fx:1200},4:{name:"Turbo",dice:550,hop:85,capture:450,fx:900}};
+function speedCfg(){return SPEED_LEVELS[Number(currentState?.settings?.animationSpeed||2)]||SPEED_LEVELS[2];}
 const DICE_DOT_POS={1:[[30,30]],2:[[18,18],[42,42]],3:[[18,18],[30,30],[42,42]],4:[[18,18],[42,18],[18,42],[42,42]],5:[[18,18],[42,18],[30,30],[18,42],[42,42]],6:[[18,14],[42,14],[18,30],[42,30],[18,46],[42,46]]};
 function diceSVG(f,col){if(!f||!DICE_DOT_POS[f])return`<svg viewBox="0 0 60 60"><text x="30" y="38" text-anchor="middle" font-size="22" fill="#888">–</text></svg>`;return`<svg viewBox="0 0 60 60">${DICE_DOT_POS[f].map(([x,y])=>`<circle cx="${x}" cy="${y}" r="5.5" fill="${col}"/>`).join("")}</svg>`;}
 function setDice(el,f,col){el.innerHTML=diceSVG(f,col);el.style.borderColor=col;el.style.boxShadow=`0 4px 18px rgba(0,0,0,.35),0 0 0 2px ${col}44,inset 0 1px 0 rgba(255,255,255,.8)`;}
-let diceAnimKey=0;function animateDice(el,faces,col){const key=++diceAnimKey,seq=Array.isArray(faces)&&faces.length?faces:[1],run=(n)=>{if(key!==diceAnimKey)return;const final=seq[n],start=performance.now(),dur=760;el.classList.remove("settle");void el.offsetWidth;el.classList.add("rolling");const tick=()=>{if(key!==diceAnimKey)return;const age=performance.now()-start;if(age<dur){setDice(el,1+Math.floor(Math.random()*6),col);setTimeout(tick,55+age/15);}else{el.classList.remove("rolling");setDice(el,final,col);void el.offsetWidth;el.classList.add("settle");setTimeout(()=>el.classList.remove("settle"),360);if(n+1<seq.length)setTimeout(()=>run(n+1),260);}};tick();};run(0);}
+let diceAnimKey=0;function animateDice(el,faces,col){const key=++diceAnimKey,seq=Array.isArray(faces)&&faces.length?faces:[1],run=(n)=>{if(key!==diceAnimKey)return;const final=seq[n],start=performance.now(),dur=speedCfg().dice;el.classList.remove("settle");void el.offsetWidth;el.classList.add("rolling");const tick=()=>{if(key!==diceAnimKey)return;const age=performance.now()-start;if(age<dur){setDice(el,1+Math.floor(Math.random()*6),col);setTimeout(tick,55+age/15);}else{el.classList.remove("rolling");setDice(el,final,col);void el.offsetWidth;el.classList.add("settle");setTimeout(()=>el.classList.remove("settle"),360);if(n+1<seq.length)setTimeout(()=>run(n+1),Math.max(120,speedCfg().hop));}};tick();};run(0);}
 
 const board=document.getElementById("board"),ctx=board.getContext("2d");
 const fxC=document.getElementById("fx"),fctx=fxC.getContext("2d");
@@ -356,14 +359,15 @@ function darken(hex,a){const h=hex.replace("#","");return`rgb(${Math.max(0,parse
 function tokenCell(t,players){const p=players[t.playerIndex];const def=PLAYER_DEFS.find(d=>d.key===p.key)||PLAYER_DEFS[0];const hi=t.label.charCodeAt(0)-65;if(t.state==="home")return def.yardHomes[hi]||def.yardHomes[0];if(t.state==="track"){const abs=(def.startIndex+t.step)%52;return TRACK[abs];}if(t.state==="lane")return def.lane[t.step]||def.lane[def.lane.length-1];return HOME_CELLS[t.finishSlot??4]||HOME_CELLS[4];}
 function getAvatar(src){if(!src)return null;if(avatarImgs[src])return avatarImgs[src];const img=new Image();img.src=src;avatarImgs[src]=img;return img;}
 
+const TOKEN_SUITS={A:"♥",B:"♦",C:"♣",D:"♠"};
 function drawSingleToken(x,y,t,players,hl,scale=1,alpha=1){
   const p=players[t.playerIndex],rad=cell*.285*scale;
   ctx.save();ctx.globalAlpha=alpha;ctx.shadowColor="rgba(0,0,0,.5)";ctx.shadowBlur=10*scale;ctx.shadowOffsetY=4*scale;ctx.beginPath();ctx.ellipse(x,y+rad*.16,rad*.84,rad*.34,0,0,Math.PI*2);ctx.fillStyle="rgba(0,0,0,.2)";ctx.fill();
   const grd=ctx.createRadialGradient(x-rad*.3,y-rad*.35,rad*.04,x,y,rad);grd.addColorStop(0,lighten(p.color,.42));grd.addColorStop(.58,p.color);grd.addColorStop(1,darken(p.color,.25));ctx.beginPath();ctx.arc(x,y,rad,0,Math.PI*2);ctx.fillStyle=grd;ctx.fill();ctx.strokeStyle="rgba(255,255,255,.62)";ctx.lineWidth=Math.max(1,2*scale);ctx.stroke();
   ctx.beginPath();ctx.arc(x-rad*.25,y-rad*.28,rad*.22,0,Math.PI*2);ctx.fillStyle="rgba(255,255,255,.24)";ctx.fill();
   const ir=rad*.68,img=getAvatar(p.avatar);
-  if(img&&img.complete&&img.naturalWidth>0){ctx.save();ctx.beginPath();ctx.arc(x,y,ir,0,Math.PI*2);ctx.clip();ctx.drawImage(img,x-ir,y-ir,ir*2,ir*2);ctx.restore();const bx=x+rad*.52,by=y-rad*.52;ctx.beginPath();ctx.arc(bx,by,rad*.28,0,Math.PI*2);ctx.fillStyle=p.color;ctx.fill();ctx.strokeStyle="rgba(255,255,255,.85)";ctx.lineWidth=1;ctx.stroke();ctx.fillStyle="#fff";ctx.font=`900 ${Math.max(6,Math.floor(rad*.38))}px 'Nunito',sans-serif`;ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(t.label,bx,by);}
-  else{ctx.beginPath();ctx.arc(x,y,ir,0,Math.PI*2);ctx.fillStyle="rgba(255,255,255,.92)";ctx.fill();ctx.fillStyle="rgba(0,0,0,.8)";ctx.font=`900 ${Math.max(9,Math.floor(rad*.65))}px 'Nunito',sans-serif`;ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(t.label,x,y+.5);}
+  if(img&&img.complete&&img.naturalWidth>0){ctx.save();ctx.beginPath();ctx.arc(x,y,ir,0,Math.PI*2);ctx.clip();ctx.drawImage(img,x-ir,y-ir,ir*2,ir*2);ctx.restore();const bx=x+rad*.52,by=y-rad*.52;ctx.beginPath();ctx.arc(bx,by,rad*.28,0,Math.PI*2);ctx.fillStyle=p.color;ctx.fill();ctx.strokeStyle="rgba(255,255,255,.85)";ctx.lineWidth=1;ctx.stroke();ctx.fillStyle="#fff";ctx.font=`900 ${Math.max(6,Math.floor(rad*.38))}px 'Nunito',sans-serif`;ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillStyle="#fff";ctx.beginPath();ctx.arc(bx,by,rad*.31,0,Math.PI*2);ctx.fill();ctx.strokeStyle="rgba(0,0,0,.75)";ctx.lineWidth=1.4;ctx.stroke();ctx.fillStyle=(t.label==="A"||t.label==="B")?"#dc2626":"#111";ctx.font=`900 ${Math.max(8,Math.floor(rad*.55))}px Georgia,serif`;ctx.fillText(TOKEN_SUITS[t.label]||t.label,bx,by);}
+  else{ctx.beginPath();ctx.arc(x,y,ir,0,Math.PI*2);ctx.fillStyle="rgba(255,255,255,.92)";ctx.fill();ctx.fillStyle="rgba(0,0,0,.8)";ctx.font=`900 ${Math.max(9,Math.floor(rad*.65))}px 'Nunito',sans-serif`;ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(TOKEN_SUITS[t.label]||t.label,x,y+.5);}
   if(hl){ctx.beginPath();ctx.arc(x,y,rad+5,0,Math.PI*2);ctx.strokeStyle=p.color;ctx.lineWidth=2.5;ctx.setLineDash([5,4]);ctx.stroke();ctx.setLineDash([]);}ctx.restore();
 }
 
@@ -396,8 +400,8 @@ function prepareTokenAnimations(prev,curr){
   if(foul){for(const k of Object.keys(animTokens))delete animTokens[k];return;}
   for(const nt of curr.tokens){const ot=prev.tokens.find(x=>x.id===nt.id);if(!ot||sameTokenPos(ot,nt))continue;const from=tokenCell(ot,prev.players),to=tokenCell(nt,curr.players);
     if(ot.state==="track"&&nt.state==="home"){
-      animTokens[nt.id]={kind:"captured",from,to,start:now,dur:1150};const cc=cellCtr(from.r,from.c);setTimeout(()=>burst(cc.x,cc.y,[curr.players[nt.playerIndex].color,"#fff","#f59e0b"],90,8),190);
-    }else animTokens[nt.id]={kind:"hop",from,path:pathForMove(ot,nt,curr.players),start:now,segment:155};
+      animTokens[nt.id]={kind:"captured",from,to,start:now,dur:speedCfg().capture};const cc=cellCtr(from.r,from.c);setTimeout(()=>burst(cc.x,cc.y,[curr.players[nt.playerIndex].color,"#fff","#f59e0b"],90,8),190);
+    }else animTokens[nt.id]={kind:"hop",from,path:pathForMove(ot,nt,curr.players),start:now,segment:speedCfg().hop};
   }
 }
 function animatedPose(t,target){const a=animTokens[t.id];if(!a)return{x:target.x,y:target.y,scale:1,alpha:1};const now=performance.now();
@@ -439,6 +443,10 @@ document.querySelector(".qr-modal-inner").onclick=function(e){e.stopPropagation(
 
 const socket=io();
 let roomCode=null,hostToken=null,currentGame=null,currentState=null,prevLog=[];
+let wakeLock=null;
+async function requestWakeLock(){try{if("wakeLock" in navigator&&document.visibilityState==="visible"){wakeLock=await navigator.wakeLock.request("screen");}}catch(_){}}
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")requestWakeLock();});
+document.addEventListener("click",requestWakeLock,{once:true});
 const HOST_SESSION_KEY="ludo_host_session";
 
 const SETTINGS_DEFS=[
@@ -446,6 +454,7 @@ const SETTINGS_DEFS=[
   {key:"openingBoost",    label:"Opening Boost",         desc:"First-ever 6 while all tokens home triggers a bonus roll (§4)"},
   {key:"threeSixesFoul",  label:"Three 6s Foul",         desc:"Three consecutive 6s forfeits the turn (§3.9)"},
   {key:"captureBonus",    label:"Capture Bonus Roll",     desc:"Landing on an opponent grants a bonus roll (§3.5)"},
+  {key:"finishBonus",     label:"Finish Bonus Roll",      desc:"Taking any token HOME grants another roll"},
   {key:"exactFinish",     label:"Exact Finish Required",  desc:"Must roll exact number to reach HOME (§3.8)"},
 ];
 
@@ -503,6 +512,7 @@ socket.on("connect",function(){
 socket.on("state:update",function(state){
   if(state.code!==roomCode)return;
   currentState=state;
+  requestWakeLock();
   updateLobby(state);
   renderSettings(state.settings);
   if(state.phase==="playing"||state.phase==="finished"){
@@ -565,13 +575,16 @@ function renderOdds(gs){const panel=document.getElementById("oddsPanel");if(!gs|
 
 function renderStats(gs){if(!gs)return;const t=document.getElementById("statsTable");const hdrs=["Player","🎲","6s","💀","☠️","🏠"];t.innerHTML=`<div class="stat-grid">${hdrs.map(h=>`<div class="stat-hd">${h}</div>`).join("")}${gs.players.map((gp,i)=>{const st=gs.stats[i];return`<div class="stat-name-cell stat-cell" style="color:${gp.color}">${esc(gp.displayName.slice(0,8))}</div><div class="stat-cell">${st.rolls||0}</div><div class="stat-cell">${st.sixes}</div><div class="stat-cell">${st.kills}</div><div class="stat-cell">${st.deaths}</div><div class="stat-cell">${st.finished}</div>`;}).join("")}</div>`;}
 
-function renderSettings(settings){const el=document.getElementById("settingsList");el.innerHTML=`<div style="font-size:11px;color:var(--accent);font-weight:700;margin-bottom:8px;text-transform:uppercase;letter-spacing:.4px">Rules in Effect</div>`+SETTINGS_DEFS.map(sd=>`<div class="setting-row"><div><div class="setting-label">${sd.label}</div><div class="setting-desc">${sd.desc}</div></div><div style="width:20px;height:20px;border-radius:50%;background:var(--G);display:flex;align-items:center;justify-content:center;font-size:11px;flex:0 0 auto">✓</div></div>`).join("");}
+function renderSettings(settings){const el=document.getElementById("settingsList"),level=Number(settings?.animationSpeed||2);el.innerHTML=`<div style="font-size:11px;color:var(--accent);font-weight:700;margin-bottom:8px;text-transform:uppercase;letter-spacing:.4px">Animation speed</div><div class="setting-row"><div><div class="setting-label">Gameplay pace</div><div class="setting-desc">Changes apply to the next animation.</div></div><select onchange="setGameSpeed(this.value)" style="background:var(--surface);color:var(--text);border:1px solid var(--border2);border-radius:9px;padding:7px">${Object.entries(SPEED_LEVELS).map(([n,c])=>`<option value="${n}" ${Number(n)===level?"selected":""}>${n} · ${c.name}</option>`).join("")}</select></div><div style="font-size:11px;color:var(--accent);font-weight:700;margin:12px 0 8px;text-transform:uppercase;letter-spacing:.4px">Rules in Effect</div>`+SETTINGS_DEFS.map(sd=>`<div class="setting-row"><div><div class="setting-label">${sd.label}</div><div class="setting-desc">${sd.desc}</div></div><div style="width:20px;height:20px;border-radius:50%;background:var(--G);display:flex;align-items:center;justify-content:center;font-size:11px;flex:0 0 auto">✓</div></div>`).join("");}
+function setGameSpeed(level){hostAction("host:setSpeed",{level:Number(level)});}
+
 
 function checkFX(prev,curr){if(!curr)return;const db=document.getElementById("diceBig");
   if(curr.lastRoll&&String(curr.lastRoll.id)!==db.dataset.fxRollId){db.dataset.fxRollId=String(curr.lastRoll.id);curr.lastRoll.faces.forEach((f,i)=>{if(f===6)setTimeout(()=>celebrateSix(curr,curr.lastRoll.playerIndex),i*1050+720);});}
   if(!curr.lastEvent)return;const e=curr.lastEvent;if(prev?.lastEvent&&JSON.stringify(prev.lastEvent)===JSON.stringify(e))return;const mid={x:board.width/2,y:board.height/2};
   if(e.type==="capture"){const mover=curr.tokens.find(t=>t.id===e.tokenId),cc=mover?cellCtr(tokenCell(mover,curr.players).r,tokenCell(mover,curr.players).c):mid;triggerFX("💥 CAPTURE!","Captured token returns to base",cc.x,cc.y,["#ff3b30","#ff9500","#fff"]);}
-  else if(e.type==="placement"&&e.rank===1)triggerFX("🏆 WINNER!",curr.players[e.playerIndex].displayName,mid.x,mid.y*.6);
+  else if(e.type==="finish_token"){const tok=curr.tokens.find(t=>t.id===e.tokenId),cc=tok?cellCtr(tokenCell(tok,curr.players).r,tokenCell(tok,curr.players).c):mid;triggerFX(`🏠 ${TOKEN_SUITS[tok?.label]||"TOKEN"} HOME!`,curr.players[e.playerIndex].displayName+" gets another roll",cc.x,cc.y,[curr.players[e.playerIndex].color,"#fff","#fbbf24"]);}
+  else if((e.type==="placement"&&e.rank===1)||e.type==="game_finished"){const winnerIndex=e.type==="game_finished"?e.winner:e.playerIndex;e.playerIndex=winnerIndex;e.rank=1;const c=yardCentre(curr,e.playerIndex),col=curr.players[e.playerIndex]?.color||"#f59e0b";triggerFX("🏆 WINNER!",curr.players[e.playerIndex].displayName,c.x,c.y,[col,"#fff","#fbbf24","#e879f9"]);for(let i=0;i<6;i++)setTimeout(()=>burst(c.x+rnd(-cell*2,cell*2),c.y+rnd(-cell*2,cell*2),[col,"#fff","#fbbf24","#e879f9"],120,10),i*260);setTimeout(()=>showWinner(curr),900);}
   else if(e.type==="foul"){const c=yardCentre(curr,e.playerIndex),col=curr.players[e.playerIndex]?.color||"#ef4444";triggerFX("💣 THREE SIXES!","Turn chain exploded and was undone",c.x,c.y,[col,"#ef4444","#ff9500","#111","#fff"]);setTimeout(()=>burst(c.x,c.y,["#ef4444","#ff9500","#fff"],180,15),180);}
 }
 function showWinner(gs){const ordered=gs.winnerOrder||gs.winners||[];if(!gs||!ordered.length)return;document.getElementById("winnerName").textContent=gs.players[ordered[0]].displayName+" Wins! 🎉";document.getElementById("winnerSub").textContent="Game finished — all players placed";document.getElementById("standingsList").innerHTML=ordered.map((pi,idx)=>{const isLoser=idx===ordered.length-1&&ordered.length>1;return`<div class="standing-row"><span style="font-weight:800;color:${gs.players[pi].color}">${idx===0?"🥇 #1 Champion":isLoser?"☠️ Loser":idx===1?"🥈 #2":"🥉 #"+String(idx+1)}</span><span style="font-weight:700">${esc(gs.players[pi].displayName)}</span></div>`;}).join("");document.getElementById("winnerOverlay").classList.add("show");}

@@ -1,10 +1,11 @@
 {
   "name": "ludo-multiplayer",
-  "version": "1.0.0",
-  "description": "Pakistan-style Ludo – TV host + phone controllers",
+  "version": "1.1.0",
+  "description": "Pakistan-style Ludo \u2013 TV host + phone controllers",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test test/*.test.js"
   },
   "dependencies": {
     "express": "^4.18.2",

@@ -1,0 +1,15 @@
+"use strict";
+const test=require("node:test");
+const assert=require("node:assert/strict");
+const fs=require("node:fs");
+const path=require("node:path");
+const root=path.join(__dirname,"..");
+const server=fs.readFileSync(path.join(root,"server.js"),"utf8");
+const host=fs.readFileSync(path.join(root,"public","host.html"),"utf8");
+const play=fs.readFileSync(path.join(root,"public","play.html"),"utf8");
+test("finish grants another turn without stacking counters",()=>assert.match(server,/keepTurn=die===6\|\|capturedCount>0\|\|plan\.finishesToken/));
+test("four host-controlled speed levels are exposed",()=>{assert.match(server,/host:setSpeed/);assert.match(host,/Relaxed/);assert.match(host,/Turbo/);});
+test("phone haptics cover turns, sixes, captures and wins",()=>{assert.match(play,/navigator\.vibrate/);assert.match(play,/turnId/);assert.match(play,/capturedTokenIds/);assert.match(play,/game_finished/);});
+test("tokens have permanent card-suit identities",()=>{assert.match(host,/TOKEN_SUITS/);assert.match(play,/TOKEN_SUITS/);});
+test("host requests a screen wake lock",()=>assert.match(host,/wakeLock\.request\("screen"\)/));
+test("sound was not added",()=>{assert.doesNotMatch(host,/AudioContext|new Audio\(/);assert.doesNotMatch(play,/AudioContext|new Audio\(/);});

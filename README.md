@@ -106,3 +106,17 @@ npm start
 ```
 
 Use HTTPS for a public deployment. Keep one server instance unless shared state and a Socket.IO adapter are later moved to Redis.
+
+## Version 1.1 improvements
+
+- Optional phone vibration alerts for the player's turn, every six, captures, fouls and winners.
+- Distinct card-suit identities for the four tokens: A/heart, B/diamond, C/club and D/spade.
+- Four live animation speeds controlled by the host: Relaxed, Standard, Quick and Turbo.
+- Finishing any token keeps the player's turn and grants another roll; finishing the fourth token ends that player's game immediately.
+- Screen Wake Lock support on the host display to reduce TV/laptop dimming during play.
+- Stronger token-home and full-winner celebrations.
+- No sound effects are included in this version.
+
+Vibration depends on browser support. Android browsers generally support it; iPhone/iPad browsers may ignore vibration requests. Visual alerts remain available on every phone.
+
+The Wake Lock API requires HTTPS, which Render provides. A browser or operating system may still release the lock in low-power mode; the host automatically requests it again when the page becomes visible.
