@@ -1,7 +1,7 @@
 {
   "name": "ludo-multiplayer",
-  "version": "1.2.0",
-  "description": "Pakistan-style Ludo \u2013 TV host + phone controllers",
+  "version": "5.0.0",
+  "description": "Laghmani-style multiplayer Ludo \u2013 premium flat board, 3D host dice and tokens",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

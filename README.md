@@ -1,3 +1,18 @@
+# Laghmani Ludo v5 – Premium TV Host + Phone Controllers
+
+This release preserves the existing authoritative Pakistan-style rules and replaces the presentation layer.
+
+## Visual and control model
+
+- The board remains flat and readable.
+- Tokens are glossy dimensional pieces with player photographs, colour rims and permanent ♥ ♦ ♣ ♠ identities.
+- The only full 3D dice is on the TV/host.
+- Phones contain the Roll button and receive a confirmed numeric result.
+- Token movement hops one square at a time after the TV roll finishes.
+- Captures, sixes, three-six fouls, token finishes and victories have structured visual effects.
+- Subtle host camera emphasis is used for rolls, captures and victories.
+- No rules were changed in this release.
+
 # Ludo Multiplayer – TV Host and Phone Controllers
 
 A server-authoritative Pakistan-style Ludo game for 2–4 players. The board runs on a television or laptop and each player controls their own colour from a phone.

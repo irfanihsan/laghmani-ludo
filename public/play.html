@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Ludo – Controller</title>
+<title>Laghmani Ludo – Phone Controller</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap');
 :root{
@@ -80,6 +80,7 @@ input:focus,select:focus{border-color:rgba(245,158,11,.5);background:rgba(255,25
 .tc-sub{font-size:11px;color:var(--muted);margin-top:2px}
 .tc-dice{--dice-size:48px;width:58px;height:58px;position:relative;perspective:280px;display:grid;place-items:center;flex:0 0 auto;filter:drop-shadow(0 8px 7px rgba(0,0,0,.42));overflow:visible}
 .dice-stage{width:var(--dice-size);height:var(--dice-size);position:relative;transform-style:preserve-3d}.dice-cube{position:absolute;inset:0;transform-style:preserve-3d;transform:rotateX(-18deg) rotateY(26deg);will-change:transform}.dice-face{position:absolute;inset:0;border-radius:11px;background:linear-gradient(145deg,#fffef8,#f3eddf 55%,#d5c9b8);border:1px solid rgba(255,255,255,.92);box-shadow:inset 3px 3px 6px rgba(255,255,255,.95),inset -4px -5px 8px rgba(55,38,20,.18),0 0 0 1px rgba(45,30,17,.24);backface-visibility:hidden}.dice-face::after{content:"";position:absolute;inset:3px;border-radius:8px;border:1px solid rgba(255,255,255,.48)}
+.dice-result-face{position:absolute;inset:0;z-index:4;border-radius:11px;background:linear-gradient(145deg,#fffef8,#f3eddf 55%,#d5c9b8);border:1px solid rgba(255,255,255,.92);box-shadow:inset 3px 3px 6px rgba(255,255,255,.95),inset -4px -5px 8px rgba(55,38,20,.18),0 0 0 1px rgba(45,30,17,.24),0 7px 11px rgba(0,0,0,.32);transform:translateZ(calc(var(--dice-size)/2));transition:opacity .08s linear;backface-visibility:hidden}.dice-result-face::after{content:"";position:absolute;inset:3px;border-radius:8px;border:1px solid rgba(255,255,255,.48)}.tc-dice.rolling .dice-result-face{opacity:0}.tc-dice:not(.rolling) .dice-cube{opacity:0}.tc-dice.rolling .dice-cube{opacity:1}
 .dice-front{transform:translateZ(calc(var(--dice-size)/2))}.dice-back{transform:rotateY(180deg) translateZ(calc(var(--dice-size)/2))}.dice-right{transform:rotateY(90deg) translateZ(calc(var(--dice-size)/2))}.dice-left{transform:rotateY(-90deg) translateZ(calc(var(--dice-size)/2))}.dice-top{transform:rotateX(90deg) translateZ(calc(var(--dice-size)/2))}.dice-bottom{transform:rotateX(-90deg) translateZ(calc(var(--dice-size)/2))}
 .dice-pip{position:absolute;width:14%;height:14%;border-radius:50%;background:var(--pip,#25201a);box-shadow:inset 1px 2px 3px rgba(0,0,0,.72),0 1px 1px rgba(255,255,255,.5);transform:translate(-50%,-50%)}.dice-pip.p1{left:25%;top:25%}.dice-pip.p2{left:75%;top:25%}.dice-pip.p3{left:25%;top:50%}.dice-pip.p4{left:50%;top:50%}.dice-pip.p5{left:75%;top:50%}.dice-pip.p6{left:25%;top:75%}.dice-pip.p7{left:75%;top:75%}.dice-ground{position:absolute;width:53px;height:14px;left:50%;bottom:-7px;transform:translateX(-50%);border-radius:50%;background:radial-gradient(ellipse,rgba(0,0,0,.4),transparent 72%);filter:blur(2px)}
 .tc-dice.rolling .dice-ground{opacity:.45;transform:translateX(-50%) scale(.75)}.tc-dice.settle{animation:dicePhoneLand .38s cubic-bezier(.16,1.55,.42,1)}
@@ -159,6 +160,12 @@ body{background:radial-gradient(circle at 50% -10%,#252e42,#0f1117 52%,#080a0f)}
 .tok-btn{background:linear-gradient(145deg,#252c3d,#151a26);box-shadow:inset 0 2px 1px rgba(255,255,255,.09),inset 0 -6px 9px rgba(0,0,0,.27),0 9px 16px rgba(0,0,0,.3)}.tok-btn:active{transform:translateY(5px) scale(.98);box-shadow:inset 0 3px 8px rgba(0,0,0,.4),0 3px 7px rgba(0,0,0,.25)}.tok-btn.legal{background:linear-gradient(145deg,rgba(245,158,11,.22),rgba(245,158,11,.07));box-shadow:inset 0 2px 1px rgba(255,255,255,.1),0 0 0 2px rgba(245,158,11,.25),0 10px 24px rgba(245,158,11,.18)}
 .tok-circle{box-shadow:inset 3px 3px 5px rgba(255,255,255,.28),inset -4px -5px 7px rgba(0,0,0,.28),0 8px 12px rgba(0,0,0,.42)}
 .btn,.avatar-btn,.boost-opt{box-shadow:inset 0 2px 1px rgba(255,255,255,.1),inset 0 -4px 6px rgba(0,0,0,.25),0 6px 12px rgba(0,0,0,.25)}
+
+/* v5 phone is a controller and confirmed-result display, not a second dice table. */
+.turn-card{min-height:104px}.roll-btn{width:min(86vw,330px)!important;height:112px!important;border-radius:24px!important;flex-direction:row!important;gap:14px!important}.roll-emoji{font-size:38px!important}.roll-label{font-size:16px!important;letter-spacing:1px!important}
+.roll-result{min-width:78px;height:64px;border-radius:18px;display:flex;align-items:center;justify-content:center;gap:9px;padding:0 18px;background:rgba(255,255,255,.075);border:1px solid rgba(255,255,255,.14);font-size:25px;font-weight:900;box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}
+.roll-result strong{font-size:34px;color:#fff}.result-banner{padding:14px 18px;border-radius:16px;text-align:center;font-size:16px;font-weight:900;border:1px solid var(--border2);background:linear-gradient(135deg,rgba(245,158,11,.16),rgba(255,255,255,.035));animation:resultPop .4s cubic-bezier(.2,1.5,.4,1)}
+@keyframes resultPop{from{transform:scale(.84);opacity:0}to{transform:none;opacity:1}}
 </style>
 </head>
 <body>
@@ -236,10 +243,12 @@ const SPEED_LEVELS={1:{dice:1600},2:{dice:1200},3:{dice:850},4:{dice:550}};
 const DICE_FACE_PIPS={1:["p4"],2:["p1","p7"],3:["p1","p4","p7"],4:["p1","p2","p6","p7"],5:["p1","p2","p4","p6","p7"],6:["p1","p2","p3","p5","p6","p7"]};
 const DICE_ORIENTATION={1:[0,0],2:[90,0],3:[0,-90],4:[0,90],5:[-90,0],6:[0,180]};
 function diceFaceHTML(face,cls){return `<div class="dice-face ${cls}">${DICE_FACE_PIPS[face].map(p=>`<i class="dice-pip ${p}"></i>`).join("")}</div>`;}
-function diceCubeInner(face=1,col="#25201a"){return `<div class="dice-ground"></div><div class="dice-stage"><div class="dice-cube" data-face="${face}" style="--pip:${col};transform:${faceTransform(face)}">${diceFaceHTML(1,"dice-front")+diceFaceHTML(6,"dice-back")+diceFaceHTML(3,"dice-right")+diceFaceHTML(4,"dice-left")+diceFaceHTML(2,"dice-top")+diceFaceHTML(5,"dice-bottom")}</div></div>`;}
+function diceResultHTML(face){return `<div class="dice-result-face" data-result-face="${face}">${DICE_FACE_PIPS[face].map(p=>`<i class="dice-pip ${p}"></i>`).join("")}</div>`;}
+function syncDiceResult(el,face,col){const stage=el?.querySelector(".dice-stage");if(!stage)return;let result=stage.querySelector(".dice-result-face");if(!result){stage.insertAdjacentHTML("beforeend",diceResultHTML(face||1));result=stage.querySelector(".dice-result-face");}const f=Number(face)||1;result.dataset.resultFace=String(f);result.style.setProperty("--pip",col||"#25201a");result.innerHTML=DICE_FACE_PIPS[f].map(p=>`<i class="dice-pip ${p}"></i>`).join("");el.dataset.face=String(f);}
+function diceCubeInner(face=1,col="#25201a"){return `<div class="dice-ground"></div><div class="dice-stage"><div class="dice-cube" data-face="${face}" style="--pip:${col};transform:${faceTransform(face)}">${diceFaceHTML(1,"dice-front")+diceFaceHTML(6,"dice-back")+diceFaceHTML(3,"dice-right")+diceFaceHTML(4,"dice-left")+diceFaceHTML(2,"dice-top")+diceFaceHTML(5,"dice-bottom")}</div>${diceResultHTML(face)}</div>`;}
 function dice3D(face,col,extra=""){return `<div class="tc-dice ${extra}" data-face="${face||1}">${diceCubeInner(face||1,col)}</div>`;}
 function faceTransform(face,turns={x:0,y:0,z:0}){const [x,y]=DICE_ORIENTATION[face]||DICE_ORIENTATION[1];return `rotateX(${x+turns.x*360}deg) rotateY(${y+turns.y*360}deg) rotateZ(${turns.z*360}deg)`;}
-function animateCubeDice(el,faces,col,dur){const cube=el?.querySelector(".dice-cube");if(!cube)return;cube.style.setProperty("--pip",col);const seq=faces?.length?faces:[1];const run=n=>{const final=seq[n]||1,[fx,fy]=DICE_ORIENTATION[final],paths=[{x:2,y:3,z:1},{x:3,y:2,z:-1},{x:2,y:-3,z:2},{x:-3,y:2,z:1}],path=paths[(final+n+Date.now())%paths.length],reduced=matchMedia("(prefers-reduced-motion: reduce)").matches;el.classList.add("rolling");const anim=cube.animate(reduced?[{transform:cube.style.transform},{transform:faceTransform(final)}]:[{offset:0,transform:cube.style.transform||faceTransform(1)},{offset:.25,transform:`translateY(-15px) rotateX(${path.x*150}deg) rotateY(${path.y*130}deg) rotateZ(${path.z*105}deg)`},{offset:.68,transform:`translateY(-4px) rotateX(${fx+path.x*315}deg) rotateY(${fy+path.y*305}deg) rotateZ(${path.z*320}deg)`},{offset:.85,transform:`translateY(3px) rotateX(${fx+path.x*360}deg) rotateY(${fy+path.y*360}deg) rotateZ(${path.z*360}deg)`},{offset:.93,transform:`translateY(-3px) rotateX(${fx+path.x*360}deg) rotateY(${fy+path.y*360}deg) rotateZ(${path.z*360}deg)`},{offset:1,transform:faceTransform(final,{x:path.x,y:path.y,z:path.z})}],{duration:reduced?220:dur,fill:"forwards",easing:"cubic-bezier(.2,.68,.28,1)"});anim.onfinish=()=>{cube.style.transform=faceTransform(final);cube.dataset.face=String(final);anim.cancel();el.classList.remove("rolling");el.classList.add("settle");setTimeout(()=>el.classList.remove("settle"),400);if(n+1<seq.length)setTimeout(()=>run(n+1),220);};};run(0);}
+function animateCubeDice(el,faces,col,dur){const cube=el?.querySelector(".dice-cube");if(!cube)return;cube.style.setProperty("--pip",col);syncDiceResult(el,Number(el.dataset.face)||1,col);const seq=faces?.length?faces:[1];const run=n=>{const final=seq[n]||1,[fx,fy]=DICE_ORIENTATION[final],paths=[{x:2,y:3,z:1},{x:3,y:2,z:-1},{x:2,y:-3,z:2},{x:-3,y:2,z:1}],path=paths[(final+n+Date.now())%paths.length],reduced=matchMedia("(prefers-reduced-motion: reduce)").matches;el.classList.add("rolling");const anim=cube.animate(reduced?[{transform:cube.style.transform},{transform:faceTransform(final)}]:[{offset:0,transform:cube.style.transform||faceTransform(1)},{offset:.25,transform:`translateY(-15px) rotateX(${path.x*150}deg) rotateY(${path.y*130}deg) rotateZ(${path.z*105}deg)`},{offset:.68,transform:`translateY(-4px) rotateX(${fx+path.x*315}deg) rotateY(${fy+path.y*305}deg) rotateZ(${path.z*320}deg)`},{offset:.85,transform:`translateY(3px) rotateX(${fx+path.x*360}deg) rotateY(${fy+path.y*360}deg) rotateZ(${path.z*360}deg)`},{offset:.93,transform:`translateY(-3px) rotateX(${fx+path.x*360}deg) rotateY(${fy+path.y*360}deg) rotateZ(${path.z*360}deg)`},{offset:1,transform:faceTransform(final,{x:path.x,y:path.y,z:path.z})}],{duration:reduced?220:dur,fill:"forwards",easing:"cubic-bezier(.2,.68,.28,1)"});anim.onfinish=()=>{cube.style.transform=faceTransform(final);cube.dataset.face=String(final);anim.cancel();syncDiceResult(el,final,col);el.classList.remove("rolling");el.classList.add("settle");setTimeout(()=>el.classList.remove("settle"),400);if(n+1<seq.length)setTimeout(()=>run(n+1),220);};};run(0);}
 
 
 let roomCode=null,myId=null,myToken=null,myColour=null,myName=null,avatarUrl=null;
@@ -422,6 +431,7 @@ function renderGame(state){
   const cur=gs.players[gs.current];
   const myGP=mi>=0?gs.players[mi]:null;
   const myCol=myGP?myGP.color:(COLOUR_HEX[myColour]||"#888");
+  const revealLocked=Date.now()<Number(gs.inputLockedUntil||0);
 
   // Topbar pill
   const pill=document.getElementById("turnPill");
@@ -448,19 +458,19 @@ function renderGame(state){
     </div>`;
   }
 
-  // ── Turn card with dice ─────────────────────────────────────────────────────
-  const diceCol=cur?cur.color:"#888";
-  const diceHtml=gs.lastDice
-    ?dice3D(gs.lastDice,diceCol)
-    :dice3D(1,"#777");
+  // ── Turn card: the TV owns the physical dice; phones show the confirmed result only.
+  const rollerIndex=Number.isInteger(gs.lastRoll?.playerIndex)?gs.lastRoll.playerIndex:gs.current;
+  const roller=gs.players[rollerIndex];
+  const resultHtml=gs.lastDice?`<div class="roll-result" aria-label="Rolled ${gs.lastDice}"><span>🎲</span><strong>${gs.lastDice}</strong></div>`:`<div class="roll-result"><span>TV</span></div>`;
   html+=`<div class="turn-card${isMyTurn?" mine":""}">
     <div class="tc-dot" style="background:${cur?cur.color:"#888"}"></div>
     <div class="tc-text">
-      <div class="tc-name">${isMyTurn?"Your turn 🎲":esc(cur?cur.displayName:"?")+"'s turn"}</div>
+      <div class="tc-name">${isMyTurn?"Your turn":esc(cur?cur.displayName:"?")+"'s turn"}</div>
       <div class="tc-sub">${phaseHint(gs,isMyTurn,mi)}</div>
     </div>
-    ${diceHtml}
+    ${resultHtml}
   </div>`;
+  if(gs.lastDice&&gs.lastRoll){html+=`<div class="result-banner">${rollerIndex===mi?"You rolled":"<strong>"+esc(roller?.displayName||"Player")+"</strong> rolled"} ${gs.lastDice}</div>`;}
 
   // ── Opening boost choice panel (phone decides Option A or B) ───────────────
   if(isMyTurn && gs.openingBoostChoice && gs.phase==="await_opening_choice"){
@@ -482,12 +492,12 @@ function renderGame(state){
 
   // ── Roll button (only when it's my turn, not finished, not choosing) ────────
   if(isMyTurn && gs.phase!=="finished" && !gs.openingBoostChoice){
-    const canRoll=gs.phase==="await_roll";
+    const canRoll=gs.phase==="await_roll"&&!revealLocked;
     html+=`<div class="roll-wrap">
       <button class="roll-btn" id="rollBtn" ${canRoll?"":"disabled"} onclick="doRoll()">
         ${canRoll
-          ?`<span class="roll-emoji">🎲</span><span class="roll-label">Roll Dice</span>`
-          :`<div style="transform:scale(.82)">${dice3D(gs.lastDice,diceCol)}</div><span class="roll-label">Moved!</span>`}
+          ?`<span class="roll-emoji">🎲</span><span class="roll-label">ROLL DICE ON TV</span>`
+          :`<span class="roll-emoji">✓</span><span class="roll-label">RESULT SENT</span>`}
       </button>
     </div>`;
   }
@@ -501,7 +511,7 @@ function renderGame(state){
       html+=`<div class="sect-label">${gs.phase==="await_token"?"Pick a token to move":"Your tokens"}</div>
       <div class="tokens-grid">
         ${myToks.map(t=>{
-          const isLeg=legal.includes(t.id);
+          const isLeg=legal.includes(t.id)&&!revealLocked;
           const col=myGP?myGP.color:"#888";
           const hasAv=myGP&&myGP.avatar;
           return `<button class="tok-btn${isLeg?" legal":""}" ${isLeg?"":"disabled"} onclick="${isLeg?`doMove('${t.id}')`:""}" >
@@ -533,14 +543,15 @@ function renderGame(state){
   }
 
   body.innerHTML=html;
+  if(revealLocked){clearTimeout(window.__revealTimer);window.__revealTimer=setTimeout(()=>lastState&&renderGame(lastState),Math.max(40,Number(gs.inputLockedUntil)-Date.now()+25));}
   if(((gs.lastEvent?.type==="placement"&&gs.lastEvent.rank===1)||gs.lastEvent?.type==="game_finished")&&gs.lastEvent.id!==body.dataset.winnerEvent){body.dataset.winnerEvent=gs.lastEvent.id;const wi=gs.lastEvent.type==="game_finished"?gs.lastEvent.winner:gs.lastEvent.playerIndex;showErr((mi===wi?"🏆 YOU WON!":"🏆 "+gs.players[wi].displayName+" WINS!"));}
-  requestAnimationFrame(()=>animatePhoneDice(gs));
+
 }
 
 function phaseHint(gs,isMine,mi){
   if(gs.phase==="finished") return "Game over!";
   if(gs.phase==="await_opening_choice") return isMine?"Choose Option A or B ⬆️":"Opening boost — choosing…";
-  if(gs.phase==="await_roll") return isMine?"Tap Roll Dice 🎲":"Waiting for roll…";
+  if(gs.phase==="await_roll") return isMine?"Tap below — watch the TV dice":"Waiting for the TV roll…";
   if(gs.phase==="await_token") return isMine?"Tap a highlighted token":"Choosing a token…";
   return "";
 }

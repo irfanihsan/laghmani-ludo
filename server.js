@@ -27,7 +27,12 @@ app.use((req, res, next) => {
   next();
 });
 app.use(express.json({ limit: "500kb" }));
-app.use(express.static(path.join(__dirname, "public")));
+app.use(express.static(path.join(__dirname, "public"), {
+  etag: true,
+  setHeaders(res, filePath){
+    if (/\.html$/i.test(filePath)) res.setHeader("Cache-Control", "no-store, max-age=0");
+  }
+}));
 app.get("/host", (req, res) => res.sendFile(path.join(__dirname, "public", "host.html")));
 app.get("/play", (req, res) => res.sendFile(path.join(__dirname, "public", "play.html")));
 app.get("/health", (_req, res) => res.json({ ok: true, rooms: rooms.size }));
@@ -292,7 +297,7 @@ function publicState(room){
     code:room.code, phase:room.phase,
     settings:{mandatoryCapture:true,openingBoost:true,threeSixesFoul:true,captureBonus:true,finishBonus:true,exactFinish:true,turnOrder:"Y-B-R-G",turnTimeoutSeconds:Math.round(TURN_TIMEOUT_MS/1000),animationSpeed:Number(room.settings?.animationSpeed||2)},
     players:room.players.map(p=>({id:p.id,name:p.name,colour:p.colour,connected:!!p.connected,avatar:p.avatar||null,hasAvatar:!!p.avatar,forfeited:!!p.forfeited,disconnectDeadline:p.disconnectDeadline||null})),
-    game:gs?{phase:gs.phase,players:gs.players,tokens:gs.tokens,stats:gs.stats,current:gs.current,dice:gs.dice,lastDice:gs.lastDice,movableTokenIds:gs.movableTokenIds,winnerOrder:gs.winnerOrder,winners:gs.winnerOrder,winnerRanks,openingBoostPending:gs.openingBoostPending,openingBoostChoice:gs.openingBoostChoice,log:gs.log.slice(0,30),lastEvent:gs.lastEvent,lastRoll:gs.lastRoll,actionNumber:gs.actionNumber,turnId:gs.turnId}:null,
+    game:gs?{phase:gs.phase,players:gs.players,tokens:gs.tokens,stats:gs.stats,current:gs.current,dice:gs.dice,lastDice:gs.lastDice,movableTokenIds:gs.movableTokenIds,winnerOrder:gs.winnerOrder,winners:gs.winnerOrder,winnerRanks,openingBoostPending:gs.openingBoostPending,openingBoostChoice:gs.openingBoostChoice,log:gs.log.slice(0,30),lastEvent:gs.lastEvent,lastRoll:gs.lastRoll,actionNumber:gs.actionNumber,turnId:gs.turnId,inputLockedUntil:gs.inputLockedUntil||0}:null,
     playerDefs:PLAYER_DEFS.map(d=>({...d})), track:TRACK,
   };
 }
@@ -437,7 +442,7 @@ io.on("connection",socket=>{
     const gs=room.game; if(!gs||gs.phase!=="await_roll") return cb?.({ok:false,msg:"It is not time to roll"});
     const pi=gameIndexForSocket(room,socket); if(pi!==gs.current) return cb?.({ok:false,msg:"It is not your turn"});
     pushUndo(gs); if(gs.sixStreak===0) gs.turnChainSnapshot=gameSnapshot(gs);
-    const face=rollDie(); gs.dice=face;gs.lastDice=face;gs.stats[pi].rolls++;gs.actionNumber++;gs.lastRoll={id:gs.actionNumber,playerIndex:pi,faces:[face],finalFace:face,at:now()};
+    const face=rollDie(); gs.dice=face;gs.lastDice=face;gs.stats[pi].rolls++;gs.actionNumber++;gs.lastRoll={id:gs.actionNumber,playerIndex:pi,faces:[face],finalFace:face,at:now()};gs.inputLockedUntil=now()+diceRevealMs(room);
     if(face===6){gs.sixStreak++;gs.stats[pi].sixes++;}else gs.sixStreak=0;
     const pName=gs.players[pi].displayName;
     if(gs.sixStreak>=3){
@@ -487,7 +492,7 @@ io.on("connection",socket=>{
   socket.on("player:move",({code,tokenId}={},cb)=>{
     const room=rooms.get(String(code||""));if(!room||room.phase!=="playing")return cb?.({ok:false,msg:"No active game"});
     const gs=room.game,pi=gameIndexForSocket(room,socket);if(!gs||gs.phase!=="await_token")return cb?.({ok:false,msg:"It is not time to select a token"});
-    if(pi!==gs.current)return cb?.({ok:false,msg:"It is not your turn"});if(!gs.movableTokenIds.includes(tokenId))return cb?.({ok:false,msg:"That token cannot move"});
+    if(pi!==gs.current)return cb?.({ok:false,msg:"It is not your turn"});if(now()<(gs.inputLockedUntil||0))return cb?.({ok:false,msg:"Watch the TV dice finish rolling first"});if(!gs.movableTokenIds.includes(tokenId))return cb?.({ok:false,msg:"That token cannot move"});
     const result=applyMove(gs,tokenId);if(result.logMsg)addLog(gs,result.logMsg);touch(room);emitState(room);scheduleTurnTimer(room);cb?.({ok:true});
   });
 

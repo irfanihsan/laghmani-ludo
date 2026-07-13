@@ -2,7 +2,8 @@
 const test=require("node:test");const assert=require("node:assert");const fs=require("node:fs");const path=require("node:path");
 const host=fs.readFileSync(path.join(__dirname,"../public/host.html"),"utf8");
 const play=fs.readFileSync(path.join(__dirname,"../public/play.html"),"utf8");
-test("host and phone use physical six-face CSS dice",()=>{for(const s of [host,play]){assert.match(s,/transform-style:preserve-3d/);assert.match(s,/dice-front/);assert.match(s,/dice-back/);assert.match(s,/DICE_ORIENTATION/);}});
-test("3D dice settles on server supplied face",()=>{for(const s of [host,play]){assert.match(s,/faceTransform\(final/);assert.match(s,/lastRoll/);}});
+test("host uses the physical six-face CSS dice",()=>{assert.match(host,/transform-style:preserve-3d/);assert.match(host,/dice-front/);assert.match(host,/dice-back/);assert.match(host,/DICE_ORIENTATION/);});
+test("host dice settles on the server supplied face",()=>{assert.match(host,/faceTransform\(final/);assert.match(host,/lastRoll/);});
+test("phone shows a confirmed result instead of a second physical dice",()=>{assert.match(play,/TV owns the physical dice/);assert.match(play,/roll-result/);assert.match(play,/ROLL DICE ON TV/);});
 test("board retains original player colours",()=>{for(const c of ["#22c55e","#eab308","#3b82f6","#ef4444"])assert.ok(host.includes(c));});
-test("3D tabletop and raised controller styling exists",()=>{assert.match(host,/3D tabletop theme/);assert.match(host,/shadowOffsetY/);assert.match(play,/3D controller theme/);});
+test("flat board and dimensional token styling coexist",()=>{assert.match(host,/premium flat-board theme/);assert.match(host,/Metallic outer rim/);assert.match(play,/controller and confirmed-result display/);});
