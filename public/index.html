@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Ludo Multiplayer</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap');
+:root{--bg:#0f1117;--surface:#181c27;--border:rgba(255,255,255,.09);--text:#e8ecff;--muted:#6b7394;}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;
+background-image:radial-gradient(ellipse 700px 500px at 50% 0%,rgba(245,158,11,.07) 0%,transparent 60%)}
+.wrap{max-width:420px;width:100%;text-align:center}
+.logo{font-size:56px;font-weight:900;background:linear-gradient(135deg,#f59e0b,#ef4444);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:4px}
+.tagline{color:var(--muted);font-size:14px;margin-bottom:36px}
+.dots{display:flex;justify-content:center;gap:10px;margin-bottom:36px}
+.dot{width:16px;height:16px;border-radius:50%;box-shadow:0 0 14px currentColor}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:24px;margin-bottom:14px}
+.card-title{font-size:17px;font-weight:800;margin-bottom:5px}
+.card-sub{color:var(--muted);font-size:13px;margin-bottom:18px;line-height:1.5}
+.btn{display:block;width:100%;padding:14px;border-radius:14px;border:none;font-family:inherit;font-size:15px;font-weight:800;cursor:pointer;text-decoration:none;text-align:center;transition:transform .1s;letter-spacing:.1px}
+.btn:active{transform:scale(.97)}
+.btn-gold{background:linear-gradient(135deg,#f59e0b,#d97706);color:#1a0800;box-shadow:0 8px 24px rgba(245,158,11,.25)}
+.btn-muted{background:rgba(255,255,255,.07);border:1px solid var(--border);color:var(--text)}
+.row{display:flex;gap:8px}
+input{flex:1;padding:13px 15px;border-radius:13px;border:1px solid var(--border);background:rgba(255,255,255,.06);color:var(--text);font-family:inherit;font-size:16px;outline:none}
+input:focus{border-color:rgba(245,158,11,.5)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="logo">🎲 LUDO</div>
+  <div class="tagline">Pakistan-style · TV Host + Phone Controllers</div>
+  <div class="dots">
+    <div class="dot" style="background:#22c55e;color:#22c55e"></div>
+    <div class="dot" style="background:#eab308;color:#eab308"></div>
+    <div class="dot" style="background:#3b82f6;color:#3b82f6"></div>
+    <div class="dot" style="background:#ef4444;color:#ef4444"></div>
+  </div>
+  <div class="card">
+    <div class="card-title">📺 TV / Laptop</div>
+    <div class="card-sub">Open on the big screen. A room code will appear — share it with players on their phones.</div>
+    <a class="btn btn-gold" href="/host">Open Host Board</a>
+  </div>
+  <div class="card">
+    <div class="card-title">📱 Phone / Tablet</div>
+    <div class="card-sub">Enter the room code shown on the TV to join as a player</div>
+    <div class="row" style="margin-bottom:10px">
+      <input id="codeIn" placeholder="Room code e.g. 4231" maxlength="4" inputmode="numeric"/>
+      <button class="btn btn-muted" style="width:auto;padding:13px 18px;flex:0 0 auto" onclick="join()">Join →</button>
+    </div>
+    <a class="btn btn-muted" href="/play">Open Player Screen</a>
+  </div>
+</div>
+<script>
+function join(){ const c=document.getElementById("codeIn").value.trim(); if(c) location.href="/play?code="+encodeURIComponent(c); }
+document.getElementById("codeIn").addEventListener("keydown",e=>{if(e.key==="Enter") join();});
+</script>
+</body>
+</html>

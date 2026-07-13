@@ -1,0 +1,19 @@
+{
+  "name": "ludo-multiplayer",
+  "version": "2.0.0",
+  "description": "Pakistan-style Ludo – TV host + phone controllers",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "check": "node --check server.js && node test/integration.test.js",
+    "test": "node test/integration.test.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "socket.io": "^4.8.1",
+    "socket.io-client": "^4.8.1"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

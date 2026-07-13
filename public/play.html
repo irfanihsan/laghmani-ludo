@@ -1,0 +1,568 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Ludo – Controller</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap');
+:root{
+  --bg:#0f1117;--surface:#181c27;--surface2:#1f2435;
+  --border:rgba(255,255,255,.09);--border2:rgba(255,255,255,.15);
+  --text:#e8ecff;--muted:#6b7394;
+  --G:#22c55e;--Y:#eab308;--B:#3b82f6;--R:#ef4444;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overscroll-behavior:none}
+body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);display:flex;flex-direction:column;overflow:hidden}
+.screen{display:none;flex-direction:column;flex:1;overflow:hidden}
+.screen.active{display:flex}
+
+/* ── JOIN ── */
+.join-scroll{flex:1;overflow-y:auto;padding:28px 20px 40px;display:flex;flex-direction:column;gap:18px;align-items:center}
+.logo-big{font-size:40px;font-weight:900;background:linear-gradient(135deg,#f59e0b,#ef4444);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;line-height:1.1}
+.field{width:100%;max-width:380px}
+.field-label{font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:7px}
+input,select{width:100%;padding:14px 16px;border-radius:14px;border:1px solid var(--border);background:rgba(255,255,255,.06);color:var(--text);font-family:inherit;font-size:16px;outline:none;-webkit-appearance:none}
+input:focus,select:focus{border-color:rgba(245,158,11,.5);background:rgba(255,255,255,.08)}
+.colour-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;max-width:380px;width:100%}
+.c-opt{padding:12px 6px;border-radius:13px;border:2px solid transparent;cursor:pointer;text-align:center;font-weight:800;font-size:13px;transition:transform .1s,border-color .15s;user-select:none}
+.c-opt:active{transform:scale(.93)}
+.c-opt.selected{border-color:rgba(255,255,255,.7);box-shadow:0 0 16px currentColor}
+.c-opt.taken{opacity:.28;pointer-events:none}
+.c-opt .c-icon{font-size:22px;margin-bottom:3px}
+.btn{width:100%;max-width:380px;padding:15px;border-radius:15px;border:none;font-family:inherit;font-size:16px;font-weight:800;cursor:pointer;transition:transform .1s,opacity .12s;letter-spacing:.2px}
+.btn:active{transform:scale(.96)}
+.btn:disabled{opacity:.3;pointer-events:none}
+.btn-gold{background:linear-gradient(135deg,#f59e0b,#d97706);color:#1a0800;box-shadow:0 8px 28px rgba(245,158,11,.3)}
+.btn-muted{background:rgba(255,255,255,.08);border:1px solid var(--border);color:var(--text)}
+.err-msg{color:#f87171;font-size:13px;font-weight:600;text-align:center;min-height:20px}.game-alert{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:50;background:#2a1b1f;border:1px solid rgba(248,113,113,.4);color:#fecaca;padding:10px 14px;border-radius:12px;font-size:13px;font-weight:700;display:none;max-width:90%;text-align:center}
+
+/* ── LOBBY ── */
+.lobby-body{flex:1;overflow-y:auto;padding:24px 20px 36px;display:flex;flex-direction:column;align-items:center;gap:16px}
+.colour-disc{width:80px;height:80px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:30px;font-weight:900;border:3px solid rgba(255,255,255,.25);box-shadow:0 0 32px currentColor}
+.lobby-name{font-size:24px;font-weight:900;margin-top:4px}
+.lobby-room{font-size:13px;color:var(--muted)}
+
+/* Avatar upload */
+.avatar-card{width:100%;max-width:380px;background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px;display:flex;align-items:center;gap:14px}
+.avatar-thumb{width:64px;height:64px;border-radius:50%;overflow:hidden;border:2px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);display:flex;align-items:center;justify-content:center;font-size:24px;flex:0 0 auto}
+.avatar-thumb img{width:100%;height:100%;object-fit:cover}
+.avatar-btns{display:flex;flex-direction:column;gap:7px;flex:1}
+.avatar-btn{padding:9px 12px;border-radius:11px;border:1px solid var(--border);background:rgba(255,255,255,.07);color:var(--text);font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;text-align:left}
+
+.lobby-players-list{width:100%;max-width:380px;display:flex;flex-direction:column;gap:7px}
+.lp-row{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:12px;background:rgba(255,255,255,.04);border:1px solid var(--border)}
+.lp-dot{width:12px;height:12px;border-radius:50%;flex:0 0 auto}
+.waiting-lbl{font-size:13px;color:var(--muted);text-align:center;padding:8px 0}
+
+/* ── GAME ── */
+.game-topbar{padding:10px 16px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex:0 0 auto}
+.my-token{width:42px;height:42px;border-radius:50%;border:2px solid;overflow:hidden;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:17px;flex:0 0 auto}
+.my-token img{width:100%;height:100%;object-fit:cover}
+.my-info{flex:1;min-width:0}
+.my-name{font-size:16px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.my-colour{font-size:11px;color:var(--muted)}
+.turn-pill{padding:5px 12px;border-radius:999px;font-size:11px;font-weight:800;background:rgba(255,255,255,.07);border:1px solid var(--border);text-transform:uppercase;letter-spacing:.3px;white-space:nowrap}
+.turn-pill.mine{background:rgba(245,158,11,.15);border-color:rgba(245,158,11,.4);color:#f59e0b}
+
+.game-body{flex:1;overflow-y:auto;padding:12px 16px 24px;display:flex;flex-direction:column;gap:12px}
+
+/* Turn card */
+.turn-card{padding:14px 16px;border-radius:16px;background:var(--surface);border:1px solid var(--border);display:flex;align-items:center;gap:12px}
+.turn-card.mine{background:rgba(245,158,11,.08);border-color:rgba(245,158,11,.3)}
+.tc-dot{width:11px;height:11px;border-radius:50%;flex:0 0 auto}
+.tc-text{flex:1}
+.tc-name{font-size:15px;font-weight:800}
+.tc-sub{font-size:11px;color:var(--muted);margin-top:2px}
+.tc-dice{width:54px;height:54px;border-radius:12px;background:#fff;border:2.5px solid #ddd;display:flex;align-items:center;justify-content:center;flex:0 0 auto;box-shadow:0 3px 12px rgba(0,0,0,.2);transition:border-color .3s,box-shadow .3s}
+.tc-dice svg{width:36px;height:36px}
+
+/* Roll button */
+.roll-wrap{display:flex;justify-content:center;padding:8px 0}
+.roll-btn{
+  width:130px;height:130px;border-radius:30px;border:none;
+  background:linear-gradient(145deg,#f59e0b,#d97706);
+  box-shadow:0 14px 40px rgba(245,158,11,.4),0 2px 0 rgba(255,255,255,.2) inset;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+  cursor:pointer;transition:transform .1s,box-shadow .1s;
+}
+.roll-btn:active{transform:scale(.91);box-shadow:0 4px 16px rgba(245,158,11,.25)}
+.roll-btn:disabled{opacity:.28;pointer-events:none;box-shadow:none}
+.roll-emoji{font-size:50px;line-height:1;pointer-events:none}
+.roll-label{font-size:11px;font-weight:800;color:rgba(0,0,0,.6);text-transform:uppercase;letter-spacing:.5px;pointer-events:none}
+@keyframes rollShake{0%,100%{transform:rotate(-4deg) scale(1.04)}50%{transform:rotate(4deg) scale(.96)}}
+.roll-btn.rolling{animation:rollShake .15s linear infinite}
+
+/* Tokens grid */
+.sect-label{font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.tokens-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.tok-btn{
+  padding:16px 10px 13px;border-radius:18px;
+  background:var(--surface);border:2px solid var(--border);
+  color:var(--text);font-family:inherit;cursor:pointer;
+  display:flex;flex-direction:column;align-items:center;gap:7px;
+  transition:transform .1s,background .12s,border-color .12s;
+  position:relative;
+}
+.tok-btn:active{transform:scale(.93)}
+.tok-btn.legal{
+  background:rgba(245,158,11,.1);border-color:rgba(245,158,11,.5);
+  box-shadow:0 4px 20px rgba(245,158,11,.15);
+}
+.tok-btn:disabled{opacity:.22;pointer-events:none}
+.tok-circle{
+  width:54px;height:54px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-size:22px;font-weight:900;border:3px solid rgba(255,255,255,.3);
+  overflow:hidden;position:relative;
+}
+.tok-circle img{width:100%;height:100%;object-fit:cover;border-radius:50%}
+.tok-num-badge{
+  position:absolute;bottom:-2px;right:-2px;
+  width:18px;height:18px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-size:10px;font-weight:900;border:1.5px solid rgba(255,255,255,.6);
+}
+.tok-name{font-size:13px;font-weight:800}
+.tok-state{font-size:10px;color:var(--muted);font-weight:600}
+.legal-badge{
+  position:absolute;top:8px;right:8px;
+  width:20px;height:20px;border-radius:50%;
+  background:#f59e0b;display:flex;align-items:center;justify-content:center;font-size:11px;
+}
+
+/* Not my turn */
+.waiting-card{padding:20px;border-radius:16px;background:var(--surface);border:1px solid var(--border);text-align:center;color:var(--muted);font-size:14px;line-height:1.5}
+
+/* Log */
+.log-mini{font-size:12px;color:rgba(255,255,255,.5);line-height:1.6}
+.ll{margin-bottom:3px}
+
+/* Finished */
+.finish-card{padding:24px 20px;border-radius:18px;text-align:center;display:flex;flex-direction:column;gap:6px}
+.finish-card.winner{background:rgba(245,158,11,.1);border:2px solid rgba(245,158,11,.35)}
+.finish-card.loser{background:rgba(239,68,68,.08);border:2px solid rgba(239,68,68,.25)}
+.finish-card.other{background:rgba(255,255,255,.04);border:1px solid var(--border)}
+.finish-big{font-size:28px;font-weight:900}
+.finish-rank{font-size:14px;color:var(--muted);font-weight:700}
+
+/* Opening boost choice */
+.boost-card{padding:20px 16px;border-radius:18px;background:rgba(245,158,11,.08);border:2px solid rgba(245,158,11,.4);display:flex;flex-direction:column;gap:14px}
+.boost-title{font-size:16px;font-weight:900;color:#f59e0b;text-align:center}
+.boost-sub{font-size:12px;color:var(--muted);text-align:center;line-height:1.5}
+.boost-opts{display:flex;flex-direction:column;gap:10px}
+.boost-opt{padding:16px;border-radius:14px;border:none;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;text-align:left;line-height:1.5;transition:transform .1s;width:100%}
+.boost-opt:active{transform:scale(.97)}
+.boost-opt-a{background:rgba(34,197,94,.15);border:1.5px solid rgba(34,197,94,.4);color:#22c55e}
+.boost-opt-b{background:rgba(59,130,246,.15);border:1.5px solid rgba(59,130,246,.4);color:#3b82f6}
+.boost-opt .opt-label{font-size:16px;font-weight:900;display:block;margin-bottom:3px}
+
+::-webkit-scrollbar{width:3px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:rgba(255,255,255,.1);border-radius:2px}
+</style>
+</head>
+<body>
+
+<!-- JOIN SCREEN -->
+<div class="screen active" id="screenJoin">
+  <div class="join-scroll">
+    <div class="logo-big">🎲 Ludo</div>
+    <div class="field">
+      <div class="field-label">Room Code</div>
+      <input id="codeIn" placeholder="e.g. 4231" maxlength="4" inputmode="numeric" autocomplete="off"/>
+    </div>
+    <div class="field">
+      <div class="field-label">Your Name</div>
+      <input id="nameIn" placeholder="Enter your name" maxlength="20"/>
+    </div>
+    <div style="width:100%;max-width:380px"><div class="field-label">Choose Your Colour</div></div>
+    <div class="colour-grid" id="colourGrid">
+      <div class="c-opt" data-c="G" style="background:rgba(34,197,94,.15);color:#22c55e" onclick="pickColour('G')"><div class="c-icon">🟢</div>Green</div>
+      <div class="c-opt" data-c="Y" style="background:rgba(234,179,8,.15);color:#eab308" onclick="pickColour('Y')"><div class="c-icon">🟡</div>Yellow</div>
+      <div class="c-opt" data-c="B" style="background:rgba(59,130,246,.15);color:#3b82f6" onclick="pickColour('B')"><div class="c-icon">🔵</div>Blue</div>
+      <div class="c-opt" data-c="R" style="background:rgba(239,68,68,.15);color:#ef4444" onclick="pickColour('R')"><div class="c-icon">🔴</div>Red</div>
+    </div>
+    <button class="btn btn-gold" onclick="joinGame()">Join Game →</button>
+    <div class="err-msg" id="errMsg"></div>
+  </div>
+</div>
+
+<!-- LOBBY SCREEN -->
+<div class="screen" id="screenLobby">
+  <div class="lobby-body">
+    <div class="colour-disc" id="lobbyDisc" style="color:#888;background:rgba(136,136,136,.15)">?</div>
+    <div class="lobby-name" id="lobbyPlayerName"></div>
+    <div class="lobby-room" id="lobbyRoomLabel"></div>
+
+    <div class="avatar-card">
+      <div class="avatar-thumb" id="avatarThumb">📷</div>
+      <div class="avatar-btns">
+        <div style="font-size:13px;font-weight:700;margin-bottom:4px">Your Token Photo</div>
+        <button class="avatar-btn" onclick="document.getElementById('fileIn').click()">📁 Upload from gallery</button>
+        <button class="avatar-btn" onclick="document.getElementById('camIn').click()">📷 Take a photo</button>
+      </div>
+    </div>
+    <input type="file" id="fileIn" accept="image/*" style="display:none" onchange="handlePhoto(event)"/>
+    <input type="file" id="camIn" accept="image/*" capture="user" style="display:none" onchange="handlePhoto(event)"/>
+
+    <div class="waiting-lbl">Waiting for host to start the game…</div>
+    <div class="lobby-players-list" id="lobbyPList"></div>
+  </div>
+</div>
+
+<!-- GAME SCREEN -->
+<div class="screen" id="screenGame">
+  <div class="game-topbar">
+    <div class="my-token" id="myTokenBadge" style="border-color:#888;background:rgba(136,136,136,.15);color:#888">?</div>
+    <div class="my-info">
+      <div class="my-name" id="myNameDisp"></div>
+      <div class="my-colour" id="myColourDisp"></div>
+    </div>
+    <div class="turn-pill" id="turnPill">Waiting…</div>
+  </div>
+  <div class="game-body" id="gameBody"></div>
+</div>
+<div class="game-alert" id="gameAlert"></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const socket=io();
+const COLOUR_HEX={G:"#22c55e",Y:"#eab308",B:"#3b82f6",R:"#ef4444"};
+const COLOUR_NAME={G:"Green",Y:"Yellow",B:"Blue",R:"Red"};
+
+// SVG dot-face dice
+const DICE_DOT_POS={1:[[14,14]],2:[[7,7],[21,21]],3:[[7,7],[14,14],[21,21]],4:[[7,7],[21,7],[7,21],[21,21]],5:[[7,7],[21,7],[14,14],[7,21],[21,21]],6:[[7,6],[21,6],[7,14],[21,14],[7,22],[21,22]]};
+function diceSVG(face,col){
+  if(!face||!DICE_DOT_POS[face]) return `<svg viewBox="0 0 28 28"><text x="14" y="19" text-anchor="middle" font-size="14" fill="#aaa">–</text></svg>`;
+  const dots=DICE_DOT_POS[face].map(([x,y])=>`<circle cx="${x}" cy="${y}" r="3" fill="${col}"/>`).join("");
+  return `<svg viewBox="0 0 28 28">${dots}</svg>`;
+}
+
+let roomCode=null,myId=null,myToken=null,myColour=null,myName=null,avatarUrl=null;
+let rolling=false;
+let lastState=null;
+
+// ── Session persistence for phone screen-off reconnect ──────────────────────
+const SESSION_KEY="ludo_session";
+function saveSession(){ try{ localStorage.setItem(SESSION_KEY,JSON.stringify({roomCode,myId,myToken,myColour,myName})); }catch(e){} }
+function loadSession(){ try{ return JSON.parse(localStorage.getItem(SESSION_KEY)||"null"); }catch(e){ return null; } }
+function clearSession(){ try{ localStorage.removeItem(SESSION_KEY); }catch(e){} }
+
+// Auto-rejoin when socket reconnects after screen-off
+socket.on("connect",()=>{
+  if(roomCode&&myId&&myToken){
+    // Already set up – re-emit join to re-register socket in room
+    socket.emit("player:rejoin",{code:roomCode,playerId:myId,playerToken:myToken},(res)=>{
+      if(res&&res.ok&&res.state) handleStateUpdate(res.state);
+    });
+  } else {
+    // Try restoring from localStorage
+    const sess=loadSession();
+    if(sess&&sess.roomCode&&sess.myId&&sess.myToken){
+      roomCode=sess.roomCode; myId=sess.myId; myToken=sess.myToken; myColour=sess.myColour;
+      myName=sess.myName; avatarUrl=null;
+      socket.emit("player:rejoin",{code:roomCode,playerId:myId,playerToken:myToken},(res)=>{
+        if(res&&res.ok){
+          setupGameUI();
+          if(res.state) handleStateUpdate(res.state);
+        } else {
+          clearSession(); roomCode=null; myId=null; myToken=null;
+        }
+      });
+    }
+  }
+});
+
+// Pre-fill code from URL
+const urlCode=new URLSearchParams(location.search).get("code");
+if(urlCode) document.getElementById("codeIn").value=urlCode;
+
+function show(id){
+  document.querySelectorAll(".screen").forEach(s=>s.classList.remove("active"));
+  document.getElementById(id).classList.add("active");
+}
+
+let selectedColour=null;
+function pickColour(c){
+  selectedColour=c;
+  document.querySelectorAll(".c-opt").forEach(o=>o.classList.toggle("selected",o.dataset.c===c));
+}
+
+function showErr(msg){ const e=document.getElementById("errMsg"),g=document.getElementById("gameAlert"); if(e)e.textContent=msg; if(g){g.textContent=msg;g.style.display="block";} setTimeout(()=>{if(e)e.textContent="";if(g)g.style.display="none";},3000); }
+
+function setupGameUI(){
+  const col=COLOUR_HEX[myColour]||"#888";
+  document.getElementById("myNameDisp").textContent=myName||"";
+  document.getElementById("myColourDisp").textContent=COLOUR_NAME[myColour]||myColour||"";
+  const badge=document.getElementById("myTokenBadge");
+  badge.style.borderColor=col; badge.style.background=`rgba(${hexRgb(col)},0.18)`; badge.style.color=col;
+  if(avatarUrl) badge.innerHTML=`<img src="${avatarUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:50%"/>`;
+  else badge.textContent=(myName||"?").charAt(0).toUpperCase();
+}
+
+function joinGame(){
+  const code=document.getElementById("codeIn").value.trim();
+  const name=document.getElementById("nameIn").value.trim();
+  if(!code){showErr("Enter the room code");return;}
+  if(!name){showErr("Enter your name");return;}
+  if(!selectedColour){showErr("Choose a colour");return;}
+  socket.emit("player:join",{code,name,colour:selectedColour},(res)=>{
+    if(!res.ok){showErr(res.msg||"Could not join");return;}
+    roomCode=code; myId=res.playerId; myToken=res.playerToken; myColour=selectedColour; myName=name;
+    saveSession();
+    const col=COLOUR_HEX[myColour]||"#888";
+    // Setup lobby
+    document.getElementById("lobbyDisc").textContent=COLOUR_NAME[myColour][0];
+    document.getElementById("lobbyDisc").style.background=`rgba(${hexRgb(col)},0.18)`;
+    document.getElementById("lobbyDisc").style.color=col;
+    document.getElementById("lobbyPlayerName").textContent=name;
+    document.getElementById("lobbyRoomLabel").textContent="Room: "+code;
+    setupGameUI();
+    show("screenLobby");
+  });
+}
+document.getElementById("codeIn").addEventListener("keydown",e=>{if(e.key==="Enter") document.getElementById("nameIn").focus();});
+document.getElementById("nameIn").addEventListener("keydown",e=>{if(e.key==="Enter") joinGame();});
+
+function hexRgb(hex){ const h=hex.replace("#",""); return `${parseInt(h.slice(0,2),16)},${parseInt(h.slice(2,4),16)},${parseInt(h.slice(4,6),16)}`; }
+
+function handlePhoto(event){
+  const file=event.target.files[0]; if(!file) return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    const img=new Image();
+    img.onload=()=>{
+      const c=document.createElement("canvas"); c.width=256; c.height=256;
+      const cx=c.getContext("2d");
+      const s=Math.min(img.width,img.height);
+      cx.drawImage(img,(img.width-s)/2,(img.height-s)/2,s,s,0,0,256,256);
+      avatarUrl=c.toDataURL("image/jpeg",.82);
+      // Update thumb
+      document.getElementById("avatarThumb").innerHTML=`<img src="${avatarUrl}"/>`;
+      // Update game badge if already showing
+      const badge=document.getElementById("myTokenBadge");
+      badge.innerHTML=`<img src="${avatarUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:50%"/>`;
+      uploadAvatar();
+    };
+    img.src=e.target.result;
+  };
+  reader.readAsDataURL(file);
+  event.target.value="";
+}
+
+async function uploadAvatar(){
+  if(!avatarUrl||!roomCode||!myId||!myToken) return;
+  try{
+    const response=await fetch("/avatar",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({code:roomCode,playerId:myId,playerToken:myToken,avatar:avatarUrl})});
+    const result=await response.json();
+    if(!response.ok||!result.ok) throw new Error(result.msg||"Photo upload failed");
+    showErr("Photo uploaded");
+  }catch(err){ showErr(err.message||"Photo upload failed"); }
+}
+
+socket.on("kicked",()=>{
+  clearSession();
+  alert("You have been removed from the game by the host.");
+  location.href="/";
+});
+
+function handleStateUpdate(state){
+  if(state.code!==roomCode) return;
+  lastState=state;
+  const me=state.players.find(p=>p.id===myId); if(me&&me.avatar){avatarUrl=me.avatar;setupGameUI();document.getElementById("avatarThumb").innerHTML=`<img src="${me.avatar}"/>`;}
+  const taken=state.players.map(p=>p.colour);
+  document.querySelectorAll(".c-opt").forEach(o=>{
+    o.classList.toggle("taken",taken.includes(o.dataset.c)&&o.dataset.c!==selectedColour);
+  });
+  const ll=document.getElementById("lobbyPList");
+  ll.innerHTML=state.players.map(p=>`<div class="lp-row">
+    <div class="lp-dot" style="background:${COLOUR_HEX[p.colour]||'#888'}"></div>
+    <strong style="font-size:13px">${esc(p.name)}</strong>
+    <span style="margin-left:auto;font-size:11px;color:var(--muted)">${COLOUR_NAME[p.colour]||p.colour}</span>
+    ${p.hasAvatar?"<span>📷</span>":""}
+  </div>`).join("");
+  if(state.phase==="playing"||state.phase==="finished"){
+    show("screenGame");
+    renderGame(state);
+  }
+}
+socket.on("state:update",handleStateUpdate);
+
+function myIdx(state){ return state.players.findIndex(p=>p.id===myId); }
+function myGameIdx(state){ return state.game?state.game.players.findIndex(p=>p.id===myId):-1; }
+
+function renderGame(state){
+  const gs=state.game; if(!gs) return;
+  const mi=myGameIdx(state);
+  const isMyTurn=mi===gs.current;
+  const cur=gs.players[gs.current];
+  const myGP=mi>=0?gs.players[mi]:null;
+  const myCol=myGP?myGP.color:(COLOUR_HEX[myColour]||"#888");
+
+  // Topbar pill
+  const pill=document.getElementById("turnPill");
+  if(gs.phase==="finished"){ pill.textContent="Game Over"; pill.className="turn-pill"; }
+  else if(isMyTurn){ pill.textContent="YOUR TURN ✨"; pill.className="turn-pill mine"; }
+  else{ pill.textContent=(cur?cur.displayName:"?")+"'s turn"; pill.className="turn-pill"; }
+
+  const body=document.getElementById("gameBody");
+  let html="";
+
+  // ── Game finished banner ────────────────────────────────────────────────────
+  if(gs.phase==="finished"){
+    const wo=gs.winnerOrder||[];
+    const myRank=wo.indexOf(mi);  // 0-based index, -1 if not in list
+    const isWinner=myRank===0;
+    const isLoser=myRank===wo.length-1&&wo.length===state.players.length;
+    const rankNum=myRank+1;
+    let cls=isWinner?"winner":isLoser?"loser":"other";
+    let big=isWinner?"🏆 You Won!":isLoser?"☠️ Loser":"Game Finished";
+    let rank=isWinner?"1st Place — Champion!":isLoser?"Last place — better luck next time":"#"+rankNum+" Place";
+    html+=`<div class="finish-card ${cls}">
+      <div class="finish-big">${big}</div>
+      <div class="finish-rank">${rank}</div>
+    </div>`;
+  }
+
+  // ── Turn card with dice ─────────────────────────────────────────────────────
+  const diceCol=cur?cur.color:"#888";
+  const diceHtml=gs.lastDice
+    ?`<div class="tc-dice" style="border-color:${diceCol};box-shadow:0 0 10px ${diceCol}44">${diceSVG(gs.lastDice,diceCol)}</div>`
+    :`<div class="tc-dice"><svg viewBox="0 0 28 28"><text x="14" y="19" text-anchor="middle" font-size="14" fill="#aaa">–</text></svg></div>`;
+  html+=`<div class="turn-card${isMyTurn?" mine":""}">
+    <div class="tc-dot" style="background:${cur?cur.color:"#888"}"></div>
+    <div class="tc-text">
+      <div class="tc-name">${isMyTurn?"Your turn 🎲":esc(cur?cur.displayName:"?")+"'s turn"}</div>
+      <div class="tc-sub">${phaseHint(gs,isMyTurn,mi)}</div>
+    </div>
+    ${diceHtml}
+  </div>`;
+
+  // ── Opening boost choice panel (phone decides Option A or B) ───────────────
+  if(isMyTurn && gs.openingBoostChoice && gs.phase==="await_opening_choice"){
+    html+=`<div class="boost-card">
+      <div class="boost-title">⚡ Opening Boost — Bonus Roll was 6!</div>
+      <div class="boost-sub">You rolled 6 to open, then rolled 6 again as your bonus.<br>Choose how to use it:</div>
+      <div class="boost-opts">
+        <button class="boost-opt boost-opt-a" onclick="doOpeningChoice('A')">
+          <span class="opt-label">Option A</span>
+          Bring out <strong>up to 2 tokens</strong> to START, then roll again
+        </button>
+        <button class="boost-opt boost-opt-b" onclick="doOpeningChoice('B')">
+          <span class="opt-label">Option B</span>
+          Bring out <strong>1 token</strong>, move it 6 steps, then roll again
+        </button>
+      </div>
+    </div>`;
+  }
+
+  // ── Roll button (only when it's my turn, not finished, not choosing) ────────
+  if(isMyTurn && gs.phase!=="finished" && !gs.openingBoostChoice){
+    const canRoll=gs.phase==="await_roll";
+    html+=`<div class="roll-wrap">
+      <button class="roll-btn" id="rollBtn" ${canRoll?"":"disabled"} onclick="doRoll()">
+        ${canRoll
+          ?`<span class="roll-emoji">🎲</span><span class="roll-label">Roll Dice</span>`
+          :`<div style="width:54px;height:54px;background:#fff;border-radius:12px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,.2)">${diceSVG(gs.lastDice,diceCol)}</div><span class="roll-label">Moved!</span>`}
+      </button>
+    </div>`;
+  }
+
+  // ── Token buttons ───────────────────────────────────────────────────────────
+  if(mi>=0 && gs.phase!=="finished" && !gs.openingBoostChoice){
+    const myToks=gs.tokens.filter(t=>t.playerIndex===mi);
+    const legal=Array.isArray(gs.movableTokenIds)?gs.movableTokenIds:[];
+    const showTokens=isMyTurn&&(gs.phase==="await_token"||gs.phase==="await_roll");
+    if(showTokens){
+      html+=`<div class="sect-label">${gs.phase==="await_token"?"Pick a token to move":"Your tokens"}</div>
+      <div class="tokens-grid">
+        ${myToks.map(t=>{
+          const isLeg=legal.includes(t.id);
+          const col=myGP?myGP.color:"#888";
+          const hasAv=myGP&&myGP.avatar;
+          return `<button class="tok-btn${isLeg?" legal":""}" ${isLeg?"":"disabled"} onclick="${isLeg?`doMove('${t.id}')`:""}" >
+            ${isLeg?'<div class="legal-badge">★</div>':""}
+            <div class="tok-circle" style="background:rgba(${hexRgb(col)},.18);border-color:${col}">
+              ${hasAv?`<img src="${myGP.avatar}"/><div class="tok-num-badge" style="background:${col};color:#fff">${t.label}</div>`
+                     :`<span style="color:${col}">${t.label}</span>`}
+            </div>
+            <div class="tok-name">Token ${t.label}</div>
+            <div class="tok-state">${isLeg?tokStateLbl(t):tokenReason(t,gs,isMyTurn)}</div>
+          </button>`;
+        }).join("")}
+      </div>`;
+    } else if(!isMyTurn){
+      html+=`<div class="waiting-card">⏳ Waiting for <strong>${esc(cur?cur.displayName:"?")}</strong> to play…</div>`;
+    }
+  }
+
+  // ── Not my turn waiting ─────────────────────────────────────────────────────
+  if(!isMyTurn && gs.phase!=="finished" && mi>=0){
+    // already shown above in token section; skip duplicate
+  }
+
+  // ── Game log ────────────────────────────────────────────────────────────────
+  const log=gs.log||[];
+  if(log.length>0){
+    html+=`<div class="sect-label">Recent moves</div>
+    <div class="log-mini">${log.slice(0,6).map(l=>`<div class="ll">${esc(l)}</div>`).join("")}</div>`;
+  }
+
+  body.innerHTML=html;
+}
+
+function phaseHint(gs,isMine,mi){
+  if(gs.phase==="finished") return "Game over!";
+  if(gs.phase==="await_opening_choice") return isMine?"Choose Option A or B ⬆️":"Opening boost — choosing…";
+  if(gs.phase==="await_roll") return isMine?"Tap Roll Dice 🎲":"Waiting for roll…";
+  if(gs.phase==="await_token") return isMine?"Tap a highlighted token":"Choosing a token…";
+  return "";
+}
+
+function tokStateLbl(t){
+  if(t.state==="home") return "At home base";
+  if(t.state==="track") return t.step>=46?`${52-t.step} spaces from home entry`:"On the outer track";
+  if(t.state==="lane") return `Home lane — ${t.step+1}/5`;
+  if(t.state==="finish") return "✅ Finished!";
+  return t.state;
+}
+function tokenReason(t,gs,isMyTurn){
+  if(t.state==="finish") return "Already finished";
+  if(!isMyTurn) return "Wait for your turn";
+  if(gs.phase==="await_roll") return tokStateLbl(t);
+  if(t.state==="home"&&gs.lastDice!==6) return "Needs a 6 to leave home";
+  if(t.state==="lane"&&t.step+(gs.lastDice||0)>5) return "The roll would overshoot home";
+  if(Array.isArray(gs.movableTokenIds)&&!gs.movableTokenIds.includes(t.id)) return "Unavailable under the current rule";
+  return tokStateLbl(t);
+}
+
+function doRoll(){
+  if(rolling) return; rolling=true;
+  const btn=document.getElementById("rollBtn");
+  if(btn){ btn.classList.add("rolling"); btn.disabled=true; }
+  socket.emit("player:roll",{code:roomCode},(res)=>{
+    rolling=false;
+    if(btn){ btn.classList.remove("rolling"); }
+    if(res&&!res.ok) showErr(res.msg||"Roll rejected");
+  });
+}
+
+function doMove(tokenId){
+  socket.emit("player:move",{code:roomCode,tokenId},(res)=>{
+    if(res&&!res.ok) showErr(res.msg||"Move rejected");
+  });
+}
+
+// Opening boost Option A or B — sent from phone controller
+function doOpeningChoice(option){
+  socket.emit("player:openingChoice",{code:roomCode,option},(res)=>{
+    if(res&&!res.ok) showErr(res.msg||"Choice rejected");
+  });
+}
+
+function hexRgb(hex){ const h=(hex||"#888").replace("#",""); return `${parseInt(h.slice(0,2)||"88",16)},${parseInt(h.slice(2,4)||"88",16)},${parseInt(h.slice(4,6)||"88",16)}`; }
+function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+</script>
+</body>
+</html>
