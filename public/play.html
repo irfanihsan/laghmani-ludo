@@ -91,7 +91,10 @@ input:focus,select:focus{border-color:rgba(245,158,11,.5);background:rgba(255,25
 .roll-btn:disabled{opacity:.28;pointer-events:none;box-shadow:none}
 .roll-emoji{font-size:50px;line-height:1;pointer-events:none}
 .roll-label{font-size:11px;font-weight:800;color:rgba(0,0,0,.6);text-transform:uppercase;letter-spacing:.5px;pointer-events:none}
-@keyframes rollShake{0%,100%{transform:rotate(-4deg) scale(1.04)}50%{transform:rotate(4deg) scale(.96)}}
+@keyframes rollShake{0%{transform:perspective(260px) rotateX(0) rotateY(0) rotateZ(0) scale(.88)}22%{transform:perspective(260px) rotateX(130deg) rotateY(80deg) rotateZ(55deg) scale(1.12)}50%{transform:perspective(260px) rotateX(290deg) rotateY(220deg) rotateZ(145deg) scale(.94)}78%{transform:perspective(260px) rotateX(440deg) rotateY(350deg) rotateZ(270deg) scale(1.08)}100%{transform:perspective(260px) rotateX(540deg) rotateY(450deg) rotateZ(360deg) scale(1)}}
+.tc-dice.rolling{animation:rollShake .72s cubic-bezier(.22,.8,.24,1)}
+.tc-dice.settle{animation:dicePhoneLand .34s cubic-bezier(.2,1.6,.4,1)}
+@keyframes dicePhoneLand{0%{transform:translateY(-8px) scale(1.12)}55%{transform:translateY(3px) scale(.92)}100%{transform:translateY(0) scale(1)}}
 .roll-btn.rolling{animation:rollShake .15s linear infinite}
 
 /* Tokens grid */
@@ -367,6 +370,13 @@ socket.on("kicked",()=>{
   location.href="/";
 });
 
+let lastAnimatedRollId="";
+function animatePhoneDice(gs){
+  const roll=gs?.lastRoll;if(!roll||String(roll.id)===lastAnimatedRollId)return;lastAnimatedRollId=String(roll.id);
+  const el=document.querySelector(".tc-dice");if(!el)return;const col=gs.players[roll.playerIndex]?.color||"#888",faces=roll.faces||[roll.finalFace||gs.lastDice||1];
+  const run=(n)=>{const final=faces[n],start=performance.now(),dur=720;el.classList.remove("settle");void el.offsetWidth;el.classList.add("rolling");const tick=()=>{const age=performance.now()-start;if(age<dur){el.innerHTML=diceSVG(1+Math.floor(Math.random()*6),col);setTimeout(tick,58+age/16);}else{el.classList.remove("rolling");el.innerHTML=diceSVG(final,col);void el.offsetWidth;el.classList.add("settle");setTimeout(()=>el.classList.remove("settle"),360);if(n+1<faces.length)setTimeout(()=>run(n+1),250);}};tick();};run(0);
+}
+
 function handleStateUpdate(state){
   if(state.code!==roomCode) return;
   lastState=state;
@@ -510,6 +520,7 @@ function renderGame(state){
   }
 
   body.innerHTML=html;
+  requestAnimationFrame(()=>animatePhoneDice(gs));
 }
 
 function phaseHint(gs,isMine,mi){

@@ -143,7 +143,7 @@ function initGame(room){
     phase:"await_roll", players, tokens, stats, current:0, dice:null, lastDice:null,
     movableTokenIds:[], sixStreak:0, turnLockedTokens:[], turnChainSnapshot:null,
     undoStack:[], winnerOrder:[], openingBoostPending:false, openingBoostChoice:false,
-    log:[], lastEvent:null, actionNumber:0,
+    log:[], lastEvent:null, lastRoll:null, actionNumber:0,
   };
 }
 
@@ -232,6 +232,8 @@ function applyMove(gs, tokenId){
   const t=gs.tokens.find(x=>x.id===tokenId);
   if(!t) throw new Error("Token not found");
   const die=gs.dice, pi=t.playerIndex, pName=gs.players[pi].displayName, plan=planMove(t,die,gs);
+  const from={state:t.state,step:t.step,finishSlot:t.finishSlot};
+  const capturedIds=plan.captured.map(v=>v.id);
   t.state=plan.newState; t.step=plan.newStep;
   if(plan.finishesToken) t.finishSlot=nextFinishSlot(gs,pi);
   let capturedCount=0;
@@ -244,7 +246,7 @@ function applyMove(gs, tokenId){
   let wonNow=false;
   if(gs.stats[pi].finished===4 && !gs.winnerOrder.includes(pi)){ gs.winnerOrder.push(pi); wonNow=true; }
   let msg=plan.finishesToken?`🏁 ${pName} finished token ${t.label}!`:capturedCount?`💥 ${pName} captured ${capturedCount} token(s)! Bonus roll.`:(t.state==="track"&&plan.newStep===0)?`${pName} brought out ${t.label}.`:`${pName} moved ${t.label} by ${die}.`;
-  gs.lastEvent=capturedCount?{type:"capture",playerIndex:pi,count:capturedCount}:plan.finishesToken?{type:"finish_token",playerIndex:pi,tokenId}: {type:"move",playerIndex:pi,tokenId};
+  gs.lastEvent=capturedCount?{type:"capture",playerIndex:pi,count:capturedCount,tokenId,die,from,to:{state:t.state,step:t.step,finishSlot:t.finishSlot},capturedTokenIds:capturedIds}:plan.finishesToken?{type:"finish_token",playerIndex:pi,tokenId,die,from,to:{state:t.state,step:t.step,finishSlot:t.finishSlot}}: {type:"move",playerIndex:pi,tokenId,die,from,to:{state:t.state,step:t.step,finishSlot:t.finishSlot}};
   if(wonNow){
     const rank=gs.winnerOrder.length;
     msg += rank===1?` 🏆 ${pName} WINS the game!`:` ${pName} finished #${rank}.`;
@@ -284,7 +286,7 @@ function publicState(room){
     code:room.code, phase:room.phase,
     settings:{mandatoryCapture:true,openingBoost:true,threeSixesFoul:true,captureBonus:true,exactFinish:true,turnOrder:"Y-B-R-G",turnTimeoutSeconds:Math.round(TURN_TIMEOUT_MS/1000)},
     players:room.players.map(p=>({id:p.id,name:p.name,colour:p.colour,connected:!!p.connected,avatar:p.avatar||null,hasAvatar:!!p.avatar,forfeited:!!p.forfeited,disconnectDeadline:p.disconnectDeadline||null})),
-    game:gs?{phase:gs.phase,players:gs.players,tokens:gs.tokens,stats:gs.stats,current:gs.current,dice:gs.dice,lastDice:gs.lastDice,movableTokenIds:gs.movableTokenIds,winnerOrder:gs.winnerOrder,winners:gs.winnerOrder,winnerRanks,openingBoostPending:gs.openingBoostPending,openingBoostChoice:gs.openingBoostChoice,log:gs.log.slice(0,30),lastEvent:gs.lastEvent}:null,
+    game:gs?{phase:gs.phase,players:gs.players,tokens:gs.tokens,stats:gs.stats,current:gs.current,dice:gs.dice,lastDice:gs.lastDice,movableTokenIds:gs.movableTokenIds,winnerOrder:gs.winnerOrder,winners:gs.winnerOrder,winnerRanks,openingBoostPending:gs.openingBoostPending,openingBoostChoice:gs.openingBoostChoice,log:gs.log.slice(0,30),lastEvent:gs.lastEvent,lastRoll:gs.lastRoll,actionNumber:gs.actionNumber}:null,
     playerDefs:PLAYER_DEFS.map(d=>({...d})), track:TRACK,
   };
 }
@@ -424,7 +426,7 @@ io.on("connection",socket=>{
     const gs=room.game; if(!gs||gs.phase!=="await_roll") return cb?.({ok:false,msg:"It is not time to roll"});
     const pi=gameIndexForSocket(room,socket); if(pi!==gs.current) return cb?.({ok:false,msg:"It is not your turn"});
     pushUndo(gs); if(gs.sixStreak===0) gs.turnChainSnapshot=gameSnapshot(gs);
-    const face=rollDie(); gs.dice=face;gs.lastDice=face;gs.stats[pi].rolls++;gs.actionNumber++;
+    const face=rollDie(); gs.dice=face;gs.lastDice=face;gs.stats[pi].rolls++;gs.actionNumber++;gs.lastRoll={id:gs.actionNumber,playerIndex:pi,faces:[face],finalFace:face,at:now()};
     if(face===6){gs.sixStreak++;gs.stats[pi].sixes++;}else gs.sixStreak=0;
     const pName=gs.players[pi].displayName;
     if(gs.sixStreak>=3){
@@ -434,7 +436,7 @@ io.on("connection",socket=>{
       touch(room);emitState(room);scheduleTurnTimer(room);return cb?.({ok:true,face,foul:true});
     }
     if(face===6&&!gs.stats[pi].openingUsed&&gs.tokens.filter(t=>t.playerIndex===pi).every(t=>t.state==="home")){
-      const bonus=rollDie();gs.stats[pi].openingUsed=true;gs.stats[pi].rolls++;gs.lastDice=bonus;
+      const bonus=rollDie();gs.stats[pi].openingUsed=true;gs.stats[pi].rolls++;gs.lastDice=bonus;gs.lastRoll={id:gs.actionNumber,playerIndex:pi,faces:[face,bonus],finalFace:bonus,at:now(),openingBoost:true};
       if(bonus===6){gs.sixStreak++;gs.stats[pi].sixes++;}else gs.sixStreak=0;
       addLog(gs,`⚡ ${pName} opening boost: 6 then ${bonus}.`);
       if(gs.sixStreak>=3){

@@ -106,9 +106,3 @@ npm start
 ```
 
 Use HTTPS for a public deployment. Keep one server instance unless shared state and a Socket.IO adapter are later moved to Redis.
-
-## Render-ready package
-
-This distribution includes a root-level `render.yaml`, `.node-version`, `.gitignore`, and a detailed `RENDER_DEPLOYMENT.md` guide.
-
-The default Blueprint uses a paid Starter web service with a 1 GB persistent disk mounted at `/var/data`. This is deliberate: Render's free web services do not support persistent disks, so they cannot reliably preserve active matches across restarts or redeployments.

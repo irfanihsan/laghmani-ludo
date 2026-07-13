@@ -1,24 +1,14 @@
 services:
   - type: web
-    name: pakistan-style-ludo
+    name: laghmani-ludo
     runtime: node
-    plan: starter
+    plan: free
     region: frankfurt
-    buildCommand: npm ci --omit=dev
+    buildCommand: npm install --registry=https://registry.npmjs.org --no-audit --no-fund
     startCommand: npm start
     healthCheckPath: /health
-    autoDeployTrigger: commit
-    maxShutdownDelaySeconds: 30
     envVars:
-      - key: NODE_ENV
-        value: production
+      - key: NODE_VERSION
+        value: 20.12.2
       - key: DATA_DIR
-        value: /var/data
-      - key: TURN_TIMEOUT_MS
-        value: "90000"
-      - key: ROOM_TTL_MS
-        value: "43200000"
-    disk:
-      name: ludo-data
-      mountPath: /var/data
-      sizeGB: 1
+        value: /tmp/ludo-data
