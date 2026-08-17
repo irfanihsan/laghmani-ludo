@@ -166,6 +166,7 @@ input:focus,select:focus{border-color:rgba(245,158,11,.5);background:rgba(255,25
 .roll-result{min-width:86px;text-align:right;font-size:14px;font-weight:900;color:#fbbf24}.roll-result strong{font-size:28px;display:block;line-height:1}.extra-note{font-size:11px;color:#fbbf24;font-weight:800;margin-top:3px}.tok-btn.legal{animation:selectionPulse 1.05s ease-in-out infinite}@keyframes selectionPulse{50%{transform:translateY(-3px);box-shadow:0 0 0 5px rgba(245,158,11,.08),0 10px 30px rgba(245,158,11,.28)}}
 
 .tok-btn.danger{border-color:rgba(239,68,68,.55);box-shadow:0 0 0 1px rgba(239,68,68,.12),0 8px 24px rgba(239,68,68,.08)}.tok-btn.danger.legal{border-color:rgba(245,158,11,.65);box-shadow:0 0 0 3px rgba(239,68,68,.1),0 8px 28px rgba(245,158,11,.2)}
+.risk-warning{padding:14px 16px;border-radius:16px;border:1px solid rgba(245,158,11,.38);background:linear-gradient(135deg,rgba(245,158,11,.14),rgba(239,68,68,.055));box-shadow:0 10px 28px rgba(0,0,0,.12);font-size:13px;line-height:1.45}.risk-warning strong{color:#fbbf24}.risk-warning .risk-title{font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.65px;color:#fbbf24;margin-bottom:4px}
 .impact-card{padding:14px 16px;border-radius:16px;border:1px solid rgba(239,68,68,.4);background:linear-gradient(135deg,rgba(239,68,68,.15),rgba(239,68,68,.045));font-size:13px;font-weight:800;line-height:1.45;animation:impactIn .35s cubic-bezier(.2,1.3,.3,1)}.impact-card.good{border-color:rgba(245,158,11,.42);background:linear-gradient(135deg,rgba(245,158,11,.13),rgba(245,158,11,.04))}@keyframes impactIn{from{opacity:0;transform:translateY(-8px) scale(.96)}to{opacity:1;transform:none}}
 
 </style>
@@ -386,7 +387,8 @@ function runPhoneHaptics(state, previousState){
     if(!gs) return;
     const mi=gs.players.findIndex(p=>p.id===myId);
     const prevMi=prevGs?prevGs.players.findIndex(p=>p.id===myId):-1;
-    const turnStarted=mi>=0&&gs.current===mi&&(!prevGs||prevMi<0||prevGs.current!==prevMi||previousState.phase!==state.phase);
+    const readyPhases=new Set(["await_roll","await_token","await_opening_choice"]),ready=readyPhases.has(gs.phase),prevReady=!!prevGs&&readyPhases.has(prevGs.phase);
+    const turnStarted=mi>=0&&gs.current===mi&&ready&&(!prevGs||prevMi<0||prevGs.current!==prevMi||!prevReady);
     const eventChanged=gs.lastEvent&&(!prevGs||JSON.stringify(gs.lastEvent)!==JSON.stringify(prevGs.lastEvent));
     const rollChanged=gs.lastRoll&&(!prevGs||!prevGs.lastRoll||gs.lastRoll.id!==prevGs.lastRoll.id);
     if(eventChanged&&gs.lastEvent.type==="capture"){
@@ -450,12 +452,17 @@ function renderGame(state){
   const mi=myGameIdx(state);
   const isMyTurn=mi===gs.current;
   const cur=gs.players[gs.current];
+  const actorPi=(gs.phase==="resolving"&&Number.isInteger(gs.transition?.from))?gs.transition.from:gs.current;
+  const actor=gs.players[actorPi]||cur;
   const myGP=mi>=0?gs.players[mi]:null;
   const myCol=myGP?myGP.color:(COLOUR_HEX[myColour]||"#888");
 
   // Topbar pill
   const pill=document.getElementById("turnPill");
   if(gs.phase==="finished"){ pill.textContent="Game Over"; pill.className="turn-pill"; }
+  else if(gs.phase==="rolling"){ pill.textContent=gs.current===mi?"ROLLING…":"DICE ROLLING"; pill.className=gs.current===mi?"turn-pill mine":"turn-pill"; }
+  else if(gs.phase==="resolving"){ pill.textContent=actorPi===mi?"MOVE IN PROGRESS":"PLEASE WAIT"; pill.className=actorPi===mi?"turn-pill mine":"turn-pill"; }
+  else if(gs.phase==="turn_gap"){ pill.textContent=isMyTurn?"YOU'RE UP NEXT":"NEXT TURN"; pill.className=isMyTurn?"turn-pill mine":"turn-pill"; }
   else if(isMyTurn){ pill.textContent="YOUR TURN ✨"; pill.className="turn-pill mine"; }
   else{ pill.textContent=(cur?cur.displayName:"?")+"'s turn"; pill.className="turn-pill"; }
 
@@ -480,8 +487,11 @@ function renderGame(state){
 
   // ── Shared TV dice result (phones display text only) ─────────────────────
   const roll=gs.lastRoll,rolledBy=roll?gs.players[roll.playerIndex]:null;
-  const rollText=roll?(roll.playerIndex===mi?`You rolled <strong>${roll.finalFace}</strong>`:`${esc(rolledBy?.displayName||"Player")} rolled <strong>${roll.finalFace}</strong>`):"Waiting for roll";
-  html+=`<div class="turn-card${isMyTurn?" mine":""}"><div class="tc-dot" style="background:${cur?cur.color:"#888"}"></div><div class="tc-text"><div class="tc-name">${isMyTurn?"Your turn":esc(cur?cur.displayName:"?")+"'s turn"}</div><div class="tc-sub">${phaseHint(gs,isMyTurn,mi)}</div>${gs.phase==="await_roll"&&isMyTurn&&gs.lastDice===6?'<div class="extra-note">Extra turn — roll again</div>':''}</div><div class="roll-result">${rollText}</div></div>`;
+  const rollText=gs.phase==="rolling"?"Rolling on TV…":roll?(roll.playerIndex===mi?`You rolled <strong>${roll.finalFace}</strong>`:`${esc(rolledBy?.displayName||"Player")} rolled <strong>${roll.finalFace}</strong>`):"Waiting for roll";
+  const turnTitle=gs.phase==="resolving"?`${esc(actor?.displayName||"Player")}'s move`:gs.phase==="turn_gap"?(isMyTurn?"You're up next":`Next: ${esc(cur?.displayName||"Player")}`):(isMyTurn?"Your turn":esc(cur?cur.displayName:"?")+"'s turn");
+  html+=`<div class="turn-card${isMyTurn&&!["resolving","turn_gap"].includes(gs.phase)?" mine":""}"><div class="tc-dot" style="background:${actor?actor.color:(cur?cur.color:"#888")}"></div><div class="tc-text"><div class="tc-name">${turnTitle}</div><div class="tc-sub">${phaseHint(gs,isMyTurn,mi)}</div>${gs.phase==="await_roll"&&isMyTurn&&gs.lastDice===6?'<div class="extra-note">Extra turn — roll again</div>':''}</div><div class="roll-result">${rollText}</div></div>`;
+  const riskIds=Array.isArray(gs.privateRiskTokenIds)?gs.privateRiskTokenIds:[],riskSuits=riskIds.map(id=>gs.tokens.find(t=>t.id===id)).filter(Boolean).map(t=>({A:"♥",B:"♦",C:"♣",D:"♠"}[t.label]||t.label));
+  if(state.settings?.captureRiskWarnings&&riskSuits.length){html+=`<div class="risk-warning"><div class="risk-title">⚠ Private capture warning</div><strong>${riskSuits.length===1?`Your ${riskSuits[0]} token is`:`Your ${riskSuits.join(", ")} tokens are`} at risk of being captured.</strong><br>This warning is shown only on your controller.</div>`;}
   const ev=gs.lastEvent,evFresh=ev?.at&&Date.now()-ev.at<4500;
   if(evFresh&&ev.type==="capture"){
     const victims=ev.capturedPlayerIndices||[],attacker=gs.players[ev.playerIndex]?.displayName||"Player";
@@ -498,7 +508,7 @@ function renderGame(state){
       <div class="boost-opts">
         <button class="boost-opt boost-opt-a" onclick="doOpeningChoice('A')">
           <span class="opt-label">Option A</span>
-          Bring out <strong>up to 2 tokens</strong> to START, then roll again
+          Bring out <strong>exactly 2 tokens</strong> to START, then roll again
         </button>
         <button class="boost-opt boost-opt-b" onclick="doOpeningChoice('B')">
           <span class="opt-label">Option B</span>
@@ -515,9 +525,16 @@ function renderGame(state){
       <button class="roll-btn" id="rollBtn" ${canRoll?"":"disabled"} onclick="doRoll()">
         ${canRoll
           ?`<span class="roll-emoji">🎲</span><span class="roll-label">Roll Dice</span>`
-          :`<span class="roll-emoji">✓</span><span class="roll-label">Choose token</span>`}
+          :gs.phase==="await_token"
+            ?`<span class="roll-emoji">✓</span><span class="roll-label">Choose token</span>`
+            :`<span class="roll-emoji">⏳</span><span class="roll-label">Please wait</span>`}
       </button>
     </div>`;
+  }
+
+  if(mi>=0 && ["rolling","resolving","turn_gap"].includes(gs.phase)){
+    const waitText=gs.phase==="rolling"?"The TV dice is rolling…":gs.phase==="resolving"?"Finishing the previous move and animations…":"Next turn starts in a moment…";
+    html+=`<div class="waiting-card">⏳ ${waitText}</div>`;
   }
 
   // ── Token buttons ───────────────────────────────────────────────────────────
@@ -529,7 +546,7 @@ function renderGame(state){
       html+=`<div class="sect-label">${gs.phase==="await_token"?"Pick a token to move":"Your tokens"}</div>
       <div class="tokens-grid">
         ${myToks.map(t=>{
-          const isLeg=legal.includes(t.id),danger=Number(gs.dangerCounts?.[t.id]||0);
+          const isLeg=legal.includes(t.id),danger=Number(gs.privateRiskCounts?.[t.id]||0);
           const col=myGP?myGP.color:"#888";
           const hasAv=myGP&&myGP.avatar;
           return `<button class="tok-btn${isLeg?" legal":""}${danger?" danger":""}" ${isLeg?"":"disabled"} onclick="${isLeg?`doMove('${t.id}')`:""}" >
@@ -565,10 +582,13 @@ function renderGame(state){
 
 function phaseHint(gs,isMine,mi){
   if(gs.phase==="finished") return "Game over!";
+  if(gs.phase==="rolling") return gs.current===mi?"Watch the shared dice on the TV…":"The TV dice is rolling…";
+  if(gs.phase==="resolving") return "Move in progress — controls are locked";
+  if(gs.phase==="turn_gap") return isMine?"Your turn starts in a moment…":"Waiting for the next turn…";
   if(gs.phase==="await_opening_choice") return isMine?"Choose Option A or B ⬆️":"Opening boost — choosing…";
   if(gs.phase==="await_roll") return isMine?"Tap Roll Dice 🎲":"Waiting for roll…";
   if(gs.phase==="await_token") return isMine?"Tap a highlighted token":"Choosing a token…";
-  return "";
+  return "Please wait…";
 }
 
 function tokStateLbl(t){
@@ -580,13 +600,13 @@ function tokStateLbl(t){
 }
 function tokenReason(t,gs,isMyTurn,mi){
   if(t.state==="finish") return "Already finished";
-  if(!isMyTurn) return Number(gs.dangerCounts?.[t.id]||0)>0?"⚠ Exposed to capture":"Wait for your turn";
-  if(gs.phase==="await_roll") return Number(gs.dangerCounts?.[t.id]||0)>0?"⚠ Exposed to capture":tokStateLbl(t);
+  if(!isMyTurn) return Number(gs.privateRiskCounts?.[t.id]||0)>0?"⚠ Exposed to capture":"Wait for your turn";
+  if(gs.phase==="await_roll") return Number(gs.privateRiskCounts?.[t.id]||0)>0?"⚠ Exposed to capture":tokStateLbl(t);
   if((gs.turnLockedTokens||[]).includes(t.id)) return "Capture bonus: choose a different token";
   if(t.state==="home"&&gs.lastDice!==6) return "Needs a 6 to leave home";
   if(t.state==="lane"&&t.step+(gs.lastDice||0)>5) return "The roll would overshoot HOME";
   if(t.state==="track"&&mi>=0&&!gs.stats?.[mi]?.hasCaptured&&Math.max(t.travel||0,t.step||0)>=45) return "HOME locked — capture an opponent first";
-  const danger=Number(gs.dangerCounts?.[t.id]||0);if(danger>0)return `⚠ ${danger} opponent${danger===1?"":"s"} can capture this token next roll`;
+  const danger=Number(gs.privateRiskCounts?.[t.id]||0);if(danger>0)return "⚠ At risk of capture";
   if(Array.isArray(gs.movableTokenIds)&&!gs.movableTokenIds.includes(t.id)) return "This token cannot use the current roll";
   return tokStateLbl(t);
 }

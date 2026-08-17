@@ -18,6 +18,12 @@ const TURN_TIMEOUT_MS = Number(process.env.TURN_TIMEOUT_MS || 90_000);
 const ROOM_TTL_MS = Number(process.env.ROOM_TTL_MS || 12 * 60 * 60 * 1000);
 const COLOURS = new Set(["G", "Y", "B", "R"]);
 const TURN_ORDER = ["Y", "B", "R", "G"];
+const GAME_TIMING = {
+  relaxed:  { dice:1500, reveal:180, highReveal:760, betweenDice:180, hop:280, capture:1850, impact:420, finish:900, foul:1350, resolve:300, turnGap:1200, fx:1850, winner:1200 },
+  standard: { dice:1250, reveal:160, highReveal:620, betweenDice:150, hop:215, capture:1550, impact:350, finish:760, foul:1150, resolve:260, turnGap:950,  fx:1700, winner:1000 },
+  quick:    { dice:820,  reveal:110, highReveal:430, betweenDice:110, hop:135, capture:1050, impact:240, finish:540, foul:800,  resolve:190, turnGap:600,  fx:1250, winner:700 },
+  turbo:    { dice:520,  reveal:75,  highReveal:270, betweenDice:80,  hop:82,  capture:700,  impact:160, finish:380, foul:560,  resolve:130, turnGap:360,  fx:900,  winner:460 },
+};
 
 app.disable("x-powered-by");
 app.use((req, res, next) => {
@@ -52,6 +58,7 @@ const PLAYER_DEFS = [
 
 const rooms = new Map();
 const turnTimers = new Map();
+const flowTimers = new Map();
 let persistTimer = null;
 
 function now(){ return Date.now(); }
@@ -71,7 +78,7 @@ function activePlayerCount(gs){ return gs.players.filter(p => !p.forfeited).leng
 function isDone(gs, pi){ return gs.stats[pi].finished === 4 || gs.players[pi].forfeited; }
 
 function freshRoom(code){
-  return { code, hostSocketId:null, hostToken:token(), phase:"lobby", players:[], game:null, speed:"standard", createdAt:now(), updatedAt:now(), hostDisconnectedAt:null };
+  return { code, hostSocketId:null, hostToken:token(), phase:"lobby", players:[], game:null, speed:"standard", captureRiskWarnings:true, createdAt:now(), updatedAt:now(), hostDisconnectedAt:null };
 }
 
 function serialisableRoom(room){
@@ -91,7 +98,7 @@ function saveRooms(){
   try{
     fs.mkdirSync(DATA_DIR, { recursive:true });
     const temp = DATA_FILE + ".tmp";
-    const payload = JSON.stringify({ version:2, savedAt:now(), rooms:[...rooms.values()].map(serialisableRoom) });
+    const payload = JSON.stringify({ version:3, savedAt:now(), rooms:[...rooms.values()].map(serialisableRoom) });
     fs.writeFileSync(temp, payload);
     fs.renameSync(temp, DATA_FILE);
   }catch(err){ console.error("Persistence save failed:", err.message); }
@@ -104,6 +111,8 @@ function loadRooms(){
       if(!room?.code || now() - (room.updatedAt || 0) > ROOM_TTL_MS) continue;
       room.hostSocketId = null;
       room.hostDisconnectedAt = now();
+      room.speed = GAME_TIMING[room.speed] ? room.speed : "standard";
+      room.captureRiskWarnings = room.captureRiskWarnings !== false;
       room.players ||= [];
       for(const p of room.players){ p.socketId=null; p.connected=false; p.forfeited=!!p.forfeited; }
       if(room.game){
@@ -115,6 +124,13 @@ function loadRooms(){
         }
         room.game.turnLockedTokens ||= [];
         room.game.sixStreak ||= 0;
+        room.game.transition = null;
+        room.game.lockedUntil = null;
+        if(["rolling","resolving","turn_gap"].includes(room.game.phase)){
+          room.game.phase = "await_roll";
+          room.game.dice = null;
+          room.game.movableTokenIds = [];
+        }
       }
       rooms.set(room.code, room);
     }
@@ -153,7 +169,7 @@ function initGame(room){
     phase:"await_roll", players, tokens, stats, current:0, dice:null, lastDice:null,
     movableTokenIds:[], sixStreak:0, turnLockedTokens:[], turnChainSnapshot:null,
     undoStack:[], winnerOrder:[], openingBoostPending:false, openingBoostChoice:false,
-    log:[], lastEvent:null, lastRoll:null, actionNumber:0,
+    log:[], lastEvent:null, lastRoll:null, actionNumber:0, transition:null, lockedUntil:null,
   };
 }
 
@@ -248,6 +264,81 @@ function computeDanger(gs){
   return {ids:Object.keys(counts),counts};
 }
 
+function timingFor(room){ return GAME_TIMING[room?.speed] || GAME_TIMING.standard; }
+function isHighStakesRoll(gs, pi, face){
+  if(!gs || pi < 0) return false;
+  const mine=gs.tokens.filter(t=>t.playerIndex===pi), st=gs.stats[pi]||{};
+  if((gs.sixStreak||0)>=2 && face===6) return true;
+  if(face===6 && mine.every(t=>t.state==="home")) return true;
+  if(mine.some(t=>t.state==="lane" && (t.step||0)+face===5)) return true;
+  if(st.hasCaptured && mine.some(t=>t.state==="track" && (t.step||0)+face===57)) return true;
+  return mine.some(t=>t.state==="track" && planMove(t,face,gs).captured.length>0);
+}
+function diceDuration(room, roll){
+  const tm=timingFor(room), faces=roll?.faces||[], highs=roll?.highStakes||[];
+  return faces.reduce((sum,_f,i)=>sum+tm.dice+(highs[i]?tm.highReveal:tm.reveal)+(i+1<faces.length?tm.betweenDice:0),0);
+}
+function movementDuration(room, event){
+  const tm=timingFor(room), steps=Math.max(1,Number(event?.moveSteps)||1);
+  let ms=steps*tm.hop+tm.resolve;
+  if(event?.type==="capture") ms+=tm.capture;
+  if(event?.type==="finish_token" || event?.type==="placement") ms+=tm.finish;
+  return ms;
+}
+function clearFlow(room){
+  if(!room) return;
+  clearTimeout(flowTimers.get(room.code)); flowTimers.delete(room.code);
+}
+function scheduleFlow(room, delay, fn){
+  clearFlow(room);
+  if(!room?.game) return;
+  const nonce=(room.game.flowNonce||0)+1; room.game.flowNonce=nonce;
+  const timer=setTimeout(()=>{
+    flowTimers.delete(room.code);
+    const live=rooms.get(room.code);
+    if(!live?.game || live.game.flowNonce!==nonce) return;
+    fn(live);
+  },Math.max(0,delay));
+  flowTimers.set(room.code,timer);
+}
+function emitStable(room){ touch(room); emitState(room); scheduleTurnTimer(room); }
+function queueTurnGap(room, actorPi, visualDelay=0){
+  const gs=room.game; if(!gs || gs.phase==="finished"){ emitStable(room); return; }
+  const tm=timingFor(room), targetPi=gs.current;
+  gs.phase="resolving"; gs.transition={from:actorPi,to:targetPi,stage:"resolving"}; gs.lockedUntil=now()+visualDelay;
+  touch(room); emitState(room);
+  scheduleFlow(room,visualDelay,live=>{
+    const g=live.game; if(!g || g.phase==="finished"){ emitStable(live); return; }
+    g.phase="turn_gap"; g.transition={from:actorPi,to:g.current,stage:"gap"}; g.lockedUntil=now()+tm.turnGap;
+    touch(live); emitState(live);
+    scheduleFlow(live,tm.turnGap,finalRoom=>{
+      const fg=finalRoom.game; if(!fg || fg.phase==="finished"){ emitStable(finalRoom); return; }
+      fg.phase="await_roll"; fg.transition=null; fg.lockedUntil=null;
+      emitStable(finalRoom);
+    });
+  });
+}
+function beginRolling(room, pi, roll, resolver){
+  const gs=room.game, ms=diceDuration(room,roll);
+  gs.phase="rolling"; gs.transition={from:pi,to:pi,stage:"rolling"}; gs.lockedUntil=now()+ms;
+  touch(room); emitState(room);
+  scheduleFlow(room,ms,live=>resolver(live));
+}
+function applyAndQueueMove(room, pi, tokenId){
+  const gs=room.game, result=applyMove(gs,tokenId);
+  if(result.logMsg) addLog(gs,result.logMsg);
+  if(gs.phase==="finished"){ touch(room); emitState(room); return result; }
+  queueTurnGap(room,pi,movementDuration(room,gs.lastEvent));
+  return result;
+}
+function resolveNoMove(room, pi, face){
+  const gs=room.game, name=gs.players[pi]?.displayName||"Player";
+  addLog(gs,`${name} has no legal move — turn skipped.`);
+  gs.dice=null; gs.movableTokenIds=[]; advanceTurn(gs);
+  gs.lastEvent={type:"no_move",playerIndex:pi,die:face,at:now()};
+  queueTurnGap(room,pi,timingFor(room).resolve);
+}
+
 function nextFinishSlot(gs, pi){
   const used=new Set(gs.tokens.filter(t => t.playerIndex===pi && t.state==="finish").map(t=>t.finishSlot).filter(Number.isInteger));
   for(let i=0;i<4;i++) if(!used.has(i)) return i;
@@ -299,11 +390,12 @@ function applyMove(gs, tokenId){
   let wonNow=false;
   if(gs.stats[pi].finished===4 && !gs.winnerOrder.includes(pi)){ gs.winnerOrder.push(pi); wonNow=true; }
   let msg=plan.finishesToken?`🏁 ${pName} finished token ${t.label}!`:capturedCount?`💥 ${pName} captured ${capturedCount} token(s)! Bonus roll.`:(t.state==="track"&&plan.newStep===0)?`${pName} brought out ${t.label}.`:`${pName} moved ${t.label} by ${die}.`;
-  gs.lastEvent=capturedCount?{type:"capture",playerIndex:pi,count:capturedCount,tokenId,die,from,to:{state:t.state,step:t.step,finishSlot:t.finishSlot,travel:t.travel},capturedTokenIds:capturedIds,capturedPlayerIndices:[...new Set(plan.captured.map(v=>v.playerIndex))],at:now()}:plan.finishesToken?{type:"finish_token",playerIndex:pi,tokenId,die,from,to:{state:t.state,step:t.step,finishSlot:t.finishSlot,travel:t.travel},at:now()}: {type:"move",playerIndex:pi,tokenId,die,from,to:{state:t.state,step:t.step,finishSlot:t.finishSlot,travel:t.travel},at:now()};
+  const moveSteps=from.state==="home"?1:Math.max(1,die||1);
+  gs.lastEvent=capturedCount?{type:"capture",playerIndex:pi,count:capturedCount,tokenId,die,moveSteps,from,to:{state:t.state,step:t.step,finishSlot:t.finishSlot,travel:t.travel},capturedTokenIds:capturedIds,capturedPlayerIndices:[...new Set(plan.captured.map(v=>v.playerIndex))],at:now()}:plan.finishesToken?{type:"finish_token",playerIndex:pi,tokenId,die,moveSteps,from,to:{state:t.state,step:t.step,finishSlot:t.finishSlot,travel:t.travel},at:now()}: {type:"move",playerIndex:pi,tokenId,die,moveSteps,from,to:{state:t.state,step:t.step,finishSlot:t.finishSlot,travel:t.travel},at:now()};
   if(wonNow){
     const rank=gs.winnerOrder.length;
     msg += rank===1?` 🏆 ${pName} WINS the game!`:` ${pName} finished #${rank}.`;
-    gs.lastEvent={type:"placement",playerIndex:pi,rank,finishedToken:plan.finishesToken,tokenId,die,from,to:{state:t.state,step:t.step,finishSlot:t.finishSlot,travel:t.travel},at:now()};
+    gs.lastEvent={type:"placement",playerIndex:pi,rank,finishedToken:plan.finishesToken,tokenId,die,moveSteps,from,to:{state:t.state,step:t.step,finishSlot:t.finishSlot,travel:t.travel},at:now()};
   }
   const keepTurn=die===6||capturedCount>0||plan.finishesToken;
   gs.dice=null; gs.movableTokenIds=[];
@@ -325,38 +417,60 @@ function advanceTurn(gs){
 }
 function skipCurrentTurn(room, reason){
   const gs=room.game; if(!gs || gs.phase==="finished") return;
-  const name=gs.players[gs.current]?.displayName || "Player";
+  const actorPi=gs.current,name=gs.players[actorPi]?.displayName || "Player";
   addLog(gs, `⏭️ ${name}'s turn was skipped${reason?` (${reason})`:""}.`);
-  gs.dice=null; gs.movableTokenIds=[]; gs.phase="await_roll"; gs.openingBoostChoice=false; gs.openingBoostPending=false;
-  advanceTurn(gs); syncRoomPhase(room); touch(room); emitState(room); scheduleTurnTimer(room);
+  gs.dice=null; gs.movableTokenIds=[]; gs.openingBoostChoice=false; gs.openingBoostPending=false;
+  advanceTurn(gs); syncRoomPhase(room);
+  if(gs.phase==="finished"){touch(room);emitState(room);return;}
+  gs.lastEvent={type:"turn_skipped",playerIndex:actorPi,reason:reason||null,at:now()};
+  queueTurnGap(room,actorPi,timingFor(room).resolve);
 }
 function syncRoomPhase(room){ if(room.game?.phase==="finished") room.phase="finished"; }
 
-function publicState(room){
+function stateFor(room, viewerPlayerId=null){
   const gs=room.game, winnerRanks={};
   if(gs) gs.winnerOrder.forEach((pi,i)=>winnerRanks[pi]=i+1);
-  const danger=gs?computeDanger(gs):{ids:[],counts:{}};
   const progress=gs?computeProgress(gs):[];
-  return {
+  const tm=timingFor(room);
+  const state={
     code:room.code, phase:room.phase,
-    settings:{mandatoryCapture:true,openingBoost:true,threeSixesFoul:true,captureBonus:true,finishBonus:true,exactFinish:true,turnOrder:"Y-B-R-G",turnTimeoutSeconds:Math.round(TURN_TIMEOUT_MS/1000),speed:room.speed||"standard"},
+    settings:{mandatoryCapture:true,openingBoost:true,threeSixesFoul:true,captureBonus:true,finishBonus:true,exactFinish:true,turnOrder:"Y-B-R-G",turnTimeoutSeconds:Math.round(TURN_TIMEOUT_MS/1000),speed:room.speed||"standard",captureRiskWarnings:room.captureRiskWarnings!==false,timing:{...tm}},
     players:room.players.map(p=>({id:p.id,name:p.name,colour:p.colour,connected:!!p.connected,avatar:p.avatar||null,hasAvatar:!!p.avatar,forfeited:!!p.forfeited,disconnectDeadline:p.disconnectDeadline||null})),
-    game:gs?{phase:gs.phase,players:gs.players,tokens:gs.tokens,stats:gs.stats,current:gs.current,dice:gs.dice,lastDice:gs.lastDice,movableTokenIds:gs.movableTokenIds,turnLockedTokens:gs.turnLockedTokens||[],sixStreak:gs.sixStreak||0,winnerOrder:gs.winnerOrder,winners:gs.winnerOrder,winnerRanks,openingBoostPending:gs.openingBoostPending,openingBoostChoice:gs.openingBoostChoice,progress,dangerTokenIds:danger.ids,dangerCounts:danger.counts,log:gs.log.slice(0,30),lastEvent:gs.lastEvent,lastRoll:gs.lastRoll,actionNumber:gs.actionNumber}:null,
+    game:gs?{phase:gs.phase,players:gs.players,tokens:gs.tokens,stats:gs.stats,current:gs.current,dice:gs.dice,lastDice:gs.lastDice,movableTokenIds:gs.movableTokenIds,turnLockedTokens:gs.turnLockedTokens||[],sixStreak:gs.sixStreak||0,winnerOrder:gs.winnerOrder,winners:gs.winnerOrder,winnerRanks,openingBoostPending:gs.openingBoostPending,openingBoostChoice:gs.openingBoostChoice,progress,log:gs.log.slice(0,30),lastEvent:gs.lastEvent,lastRoll:gs.lastRoll,actionNumber:gs.actionNumber,transition:gs.transition||null,lockedUntil:gs.lockedUntil||null}:null,
     playerDefs:PLAYER_DEFS.map(d=>({...d})), track:TRACK,
   };
+  if(gs && viewerPlayerId && gs.phase==="rolling"){
+    state.game.lastRoll=null;
+    state.game.lastDice=null;
+    state.game.dice=null;
+  }
+  if(gs && viewerPlayerId && room.captureRiskWarnings!==false){
+    const pi=gs.players.findIndex(p=>p.id===viewerPlayerId);
+    if(pi>=0){
+      const danger=computeDanger(gs), own=new Set(gs.tokens.filter(t=>t.playerIndex===pi).map(t=>t.id));
+      state.game.privateRiskTokenIds=danger.ids.filter(id=>own.has(id));
+      state.game.privateRiskCounts=Object.fromEntries(Object.entries(danger.counts).filter(([id])=>own.has(id)));
+    }
+  }
+  return state;
 }
-function emitState(room){ syncRoomPhase(room); io.to(room.code).emit("state:update", publicState(room)); }
+function emitState(room){
+  syncRoomPhase(room);
+  if(room.hostSocketId) io.to(room.hostSocketId).emit("state:update",stateFor(room,null));
+  for(const p of room.players){ if(p.connected&&p.socketId) io.to(p.socketId).emit("state:update",stateFor(room,p.id)); }
+}
 
 function scheduleTurnTimer(room){
   clearTimeout(turnTimers.get(room.code)); turnTimers.delete(room.code);
   if(room.phase!=="playing" || !room.game || room.game.phase==="finished") return;
+  if(!["await_roll","await_token","await_opening_choice"].includes(room.game.phase)) return;
   const seat=roomPlayerForGame(room,room.game.current);
   if(!seat || seat.connected) return;
   seat.disconnectDeadline=now()+TURN_TIMEOUT_MS;
   const timer=setTimeout(()=>{
     const currentRoom=rooms.get(room.code); if(!currentRoom?.game) return;
     const currentSeat=roomPlayerForGame(currentRoom,currentRoom.game.current);
-    if(currentSeat && !currentSeat.connected) skipCurrentTurn(currentRoom,"player disconnected");
+    if(currentSeat && !currentSeat.connected && ["await_roll","await_token","await_opening_choice"].includes(currentRoom.game.phase)) skipCurrentTurn(currentRoom,"player disconnected");
   },TURN_TIMEOUT_MS);
   turnTimers.set(room.code,timer); touch(room); emitState(room);
 }
@@ -400,20 +514,20 @@ io.on("connection",socket=>{
   socket.on("host:create",(_data,cb)=>{
     const code=makeCode(),room=freshRoom(code); room.hostSocketId=socket.id; rooms.set(code,room);
     socket.join(code); socket.data.roomCode=code; socket.data.isHost=true;
-    touch(room); cb?.({ok:true,code,hostToken:room.hostToken,state:publicState(room)});
+    touch(room); cb?.({ok:true,code,hostToken:room.hostToken,state:stateFor(room,null)});
   });
   socket.on("host:rejoin",({code,hostToken}={},cb)=>{
     const room=rooms.get(String(code||""));
     if(!room||!safeTokenEqual(room.hostToken,hostToken)) return cb?.({ok:false,msg:"Room or host key invalid"});
     room.hostSocketId=socket.id; room.hostDisconnectedAt=null; socket.join(room.code); socket.data.roomCode=room.code; socket.data.isHost=true;
-    touch(room); emitState(room); cb?.({ok:true,hostToken:room.hostToken,state:publicState(room)});
+    touch(room); emitState(room); cb?.({ok:true,hostToken:room.hostToken,state:stateFor(room,null)});
   });
   socket.on("host:start",({code,hostToken}={},cb)=>{
     const room=rooms.get(String(code||"")); if(!requireHost(room,socket,hostToken)) return cb?.({ok:false,msg:"Host authorisation failed"});
     const eligible=room.players.filter(p=>!p.forfeited);
     if(room.phase!=="lobby") return cb?.({ok:false,msg:"Game already started"});
     if(eligible.length<2) return cb?.({ok:false,msg:"Need at least 2 players"});
-    room.phase="playing"; room.game=initGame(room);
+    clearFlow(room); room.phase="playing"; room.game=initGame(room);
     const first=room.game.players[0]; addLog(room.game,`Game started! ${first.displayName} (${defByKey(first.key).name}) goes first.`);
     room.game.lastEvent={type:"game_started",playerIndex:0,at:now()}; touch(room); emitState(room); scheduleTurnTimer(room); cb?.({ok:true});
   });
@@ -421,11 +535,11 @@ io.on("connection",socket=>{
     const room=rooms.get(String(code||"")); if(!requireHost(room,socket,hostToken)) return cb?.({ok:false,msg:"Host authorisation failed"});
     const available=room.players.filter(p=>!p.forfeited);
     if(available.length<2) return cb?.({ok:false,msg:"Need at least 2 active players"});
-    room.phase="playing"; room.game=initGame(room); addLog(room.game,"Game restarted."); touch(room); emitState(room); scheduleTurnTimer(room); cb?.({ok:true});
+    clearFlow(room); room.phase="playing"; room.game=initGame(room); addLog(room.game,"Game restarted."); touch(room); emitState(room); scheduleTurnTimer(room); cb?.({ok:true});
   });
   socket.on("host:lobby",({code,hostToken}={},cb)=>{
     const room=rooms.get(String(code||"")); if(!requireHost(room,socket,hostToken)) return cb?.({ok:false,msg:"Host authorisation failed"});
-    room.phase="lobby"; room.game=null; room.players=room.players.filter(p=>!p.forfeited); clearTimeout(turnTimers.get(room.code));
+    clearFlow(room); room.phase="lobby"; room.game=null; room.players=room.players.filter(p=>!p.forfeited); clearTimeout(turnTimers.get(room.code));
     touch(room); emitState(room); cb?.({ok:true});
   });
   socket.on("host:kick",({code,hostToken,playerId}={},cb)=>{
@@ -443,18 +557,25 @@ io.on("connection",socket=>{
   socket.on("host:skip",({code,hostToken}={},cb)=>{
     const room=rooms.get(String(code||"")); if(!requireHost(room,socket,hostToken)) return cb?.({ok:false,msg:"Host authorisation failed"});
     if(!room.game||room.phase!=="playing") return cb?.({ok:false,msg:"No active turn"});
-    skipCurrentTurn(room,"host skipped"); cb?.({ok:true});
+    if(!["await_roll","await_token","await_opening_choice"].includes(room.game.phase)) return cb?.({ok:false,msg:"Wait for the current animation to finish"});
+    clearFlow(room); skipCurrentTurn(room,"host skipped"); cb?.({ok:true});
   });
 
   socket.on("host:setSpeed",({code,hostToken,speed}={},cb)=>{
     const room=rooms.get(String(code||"")); if(!requireHost(room,socket,hostToken)) return cb?.({ok:false,msg:"Host authorisation failed"});
     if(!["relaxed","standard","quick","turbo"].includes(speed)) return cb?.({ok:false,msg:"Invalid speed"});
+    if(room.game&&["rolling","resolving","turn_gap"].includes(room.game.phase)) return cb?.({ok:false,msg:"Change speed after the current animation finishes"});
     room.speed=speed; touch(room); emitState(room); cb?.({ok:true,speed});
+  });
+  socket.on("host:setCaptureRiskWarnings",({code,hostToken,enabled}={},cb)=>{
+    const room=rooms.get(String(code||"")); if(!requireHost(room,socket,hostToken)) return cb?.({ok:false,msg:"Host authorisation failed"});
+    room.captureRiskWarnings=!!enabled; touch(room); emitState(room); cb?.({ok:true,enabled:room.captureRiskWarnings});
   });
   socket.on("host:undo",({code,hostToken}={},cb)=>{
     const room=rooms.get(String(code||"")); if(!requireHost(room,socket,hostToken)) return cb?.({ok:false,msg:"Host authorisation failed"});
     const gs=room.game; if(!gs?.undoStack?.length) return cb?.({ok:false,msg:"Nothing to undo"});
-    const prev=gs.undoStack.pop(),stack=gs.undoStack; Object.assign(gs,prev,{undoStack:stack}); room.phase="playing"; addLog(gs,"⏪ Last roll undone.");
+    if(["rolling","resolving","turn_gap"].includes(gs.phase)) return cb?.({ok:false,msg:"Wait for the current animation to finish"});
+    clearFlow(room); const prev=gs.undoStack.pop(),stack=gs.undoStack; Object.assign(gs,prev,{undoStack:stack}); room.phase="playing"; addLog(gs,"⏪ Last roll undone.");
     touch(room); emitState(room); scheduleTurnTimer(room); cb?.({ok:true});
   });
 
@@ -472,73 +593,101 @@ io.on("connection",socket=>{
     if(room.players.some(p=>!p.forfeited&&p.colour===colour)) return cb?.({ok:false,msg:"Colour taken"});
     const p={id:token(12),playerToken:token(),name,colour,socketId:socket.id,connected:true,avatar:null,forfeited:false,joinedAt:now(),disconnectDeadline:null};
     room.players.push(p); socket.join(room.code); socket.data.roomCode=room.code; socket.data.playerId=p.id;
-    touch(room); emitState(room); cb?.({ok:true,playerId:p.id,playerToken:p.playerToken,state:publicState(room)});
+    touch(room); emitState(room); cb?.({ok:true,playerId:p.id,playerToken:p.playerToken,state:stateFor(room,p.id)});
   });
   socket.on("player:rejoin",({code,playerId,playerToken}={},cb)=>{
     const room=rooms.get(String(code||"")); if(!room) return cb?.({ok:false,msg:"Room not found"});
     const p=room.players.find(x=>x.id===playerId);
     if(!p||p.forfeited||!safeTokenEqual(p.playerToken,playerToken)) return cb?.({ok:false,msg:"Session is no longer valid"});
     p.socketId=socket.id;p.connected=true;p.disconnectDeadline=null;socket.join(room.code);socket.data.roomCode=room.code;socket.data.playerId=p.id;
-    touch(room);emitState(room);scheduleTurnTimer(room);cb?.({ok:true,playerId:p.id,playerToken:p.playerToken,state:publicState(room)});
+    touch(room);emitState(room);scheduleTurnTimer(room);cb?.({ok:true,playerId:p.id,playerToken:p.playerToken,state:stateFor(room,p.id)});
   });
 
   socket.on("player:roll",({code}={},cb)=>{
     const room=rooms.get(String(code||"")); if(!room||room.phase!=="playing") return cb?.({ok:false,msg:"No active game"});
     const gs=room.game; if(!gs||gs.phase!=="await_roll") return cb?.({ok:false,msg:"It is not time to roll"});
     const pi=gameIndexForSocket(room,socket); if(pi!==gs.current) return cb?.({ok:false,msg:"It is not your turn"});
-    pushUndo(gs); if(gs.sixStreak===0) gs.turnChainSnapshot=gameSnapshot(gs);
-    const face=rollDie(); gs.dice=face;gs.lastDice=face;gs.stats[pi].rolls++;gs.actionNumber++;gs.lastRoll={id:gs.actionNumber,playerIndex:pi,faces:[face],finalFace:face,at:now()};
-    if(face===6){gs.sixStreak++;gs.stats[pi].sixes++;}else gs.sixStreak=0;
-    const pName=gs.players[pi].displayName;
-    if(gs.sixStreak>=3){
-      const chain=gs.turnChainSnapshot,savedUndo=gs.undoStack,rolls=gs.stats[pi].rolls,sixes=gs.stats[pi].sixes;
-      Object.assign(gs,chain,{undoStack:savedUndo,turnChainSnapshot:null}); gs.stats[pi].rolls=rolls;gs.stats[pi].sixes=sixes;
-      addLog(gs,`🚨 ${pName} rolled three 6s — foul. The whole turn chain was undone.`);gs.lastEvent={type:"foul",playerIndex:pi,at:now()};advanceTurn(gs);
-      touch(room);emitState(room);scheduleTurnTimer(room);return cb?.({ok:true,face,foul:true});
-    }
-    if(face===6&&!gs.stats[pi].openingUsed&&gs.tokens.filter(t=>t.playerIndex===pi).every(t=>t.state==="home")){
-      const bonus=rollDie();gs.stats[pi].openingUsed=true;gs.stats[pi].rolls++;gs.lastDice=bonus;gs.lastRoll={id:gs.actionNumber,playerIndex:pi,faces:[face,bonus],finalFace:bonus,at:now(),openingBoost:true};
+    clearFlow(room); pushUndo(gs); if(gs.sixStreak===0) gs.turnChainSnapshot=gameSnapshot(gs);
+    const pName=gs.players[pi].displayName, face=rollDie(), firstHigh=isHighStakesRoll(gs,pi,face);
+    gs.dice=face; gs.lastDice=face; gs.stats[pi].rolls++; gs.actionNumber++;
+    if(face===6){ gs.sixStreak++; gs.stats[pi].sixes++; } else gs.sixStreak=0;
+    let roll={id:gs.actionNumber,playerIndex:pi,faces:[face],finalFace:face,highStakes:[firstHigh],at:now()};
+    gs.lastRoll=roll;
+
+    const queueFoul=(rollRecord)=>{
+      const chain=gs.turnChainSnapshot, savedUndo=gs.undoStack, rolls=gs.stats[pi].rolls, sixes=gs.stats[pi].sixes, actionNumber=gs.actionNumber;
+      beginRolling(room,pi,rollRecord,live=>{
+        const g=live.game; if(!g) return;
+        const liveChain=chain||gameSnapshot(g), liveUndo=g.undoStack;
+        Object.assign(g,liveChain,{undoStack:liveUndo,turnChainSnapshot:null});
+        g.stats[pi].rolls=rolls; g.stats[pi].sixes=sixes; g.actionNumber=actionNumber; g.lastRoll=rollRecord; g.lastDice=rollRecord.finalFace; g.dice=null;
+        addLog(g,`🚨 ${pName} rolled three 6s — foul. The whole turn chain was undone.`);
+        g.lastEvent={type:"foul",playerIndex:pi,at:now()}; advanceTurn(g);
+        queueTurnGap(live,pi,timingFor(live).foul);
+      });
+    };
+
+    if(gs.sixStreak>=3){ queueFoul(roll); cb?.({ok:true,rolling:true}); return; }
+
+    const allHome=gs.tokens.filter(t=>t.playerIndex===pi).every(t=>t.state==="home");
+    if(face===6&&!gs.stats[pi].openingUsed&&allHome){
+      const bonus=rollDie(), bonusHigh=isHighStakesRoll(gs,pi,bonus);
+      gs.stats[pi].openingUsed=true; gs.stats[pi].rolls++; gs.lastDice=bonus;
       if(bonus===6){gs.sixStreak++;gs.stats[pi].sixes++;}else gs.sixStreak=0;
+      roll={id:gs.actionNumber,playerIndex:pi,faces:[face,bonus],finalFace:bonus,highStakes:[firstHigh,bonusHigh],at:now(),openingBoost:true}; gs.lastRoll=roll;
       addLog(gs,`⚡ ${pName} opening boost: 6 then ${bonus}.`);
-      if(gs.sixStreak>=3){
-        const chain=gs.turnChainSnapshot,savedUndo=gs.undoStack,rolls=gs.stats[pi].rolls,sixes=gs.stats[pi].sixes;
-        Object.assign(gs,chain,{undoStack:savedUndo,turnChainSnapshot:null});gs.stats[pi].rolls=rolls;gs.stats[pi].sixes=sixes;
-        addLog(gs,`🚨 ${pName} opening boost caused three 6s — foul. Turn chain undone.`);gs.lastEvent={type:"foul",playerIndex:pi,at:now()};advanceTurn(gs);
-      }else if(bonus>=1&&bonus<=4){
-        const home=gs.tokens.filter(t=>t.playerIndex===pi&&t.state==="home"),placed=home.slice(0,bonus);placed.forEach(t=>{t.state="track";t.step=0;t.travel=0;});
-        gs.dice=bonus;const result=applyMove(gs,placed[0].id);if(result.logMsg)addLog(gs,result.logMsg);addLog(gs,`${pName} automatically brought out ${placed.length} token(s).`);
-      }else if(bonus===5){
-        const t=gs.tokens.find(x=>x.playerIndex===pi&&x.state==="home");t.state="track";t.step=0;t.travel=0;gs.dice=5;const result=applyMove(gs,t.id);if(result.logMsg)addLog(gs,result.logMsg);
-      }else{
-        gs.openingBoostPending=true;gs.openingBoostChoice=true;gs.dice=6;gs.phase="await_opening_choice";addLog(gs,`${pName} must choose opening Option A or B.`);
-      }
-      touch(room);emitState(room);scheduleTurnTimer(room);return cb?.({ok:true,face,openingBoost:true,bonus});
+      if(gs.sixStreak>=3){ queueFoul(roll); cb?.({ok:true,rolling:true}); return; }
+      beginRolling(room,pi,roll,live=>{
+        const g=live.game; if(!g||g.current!==pi) return;
+        if(bonus>=1&&bonus<=4){
+          const home=g.tokens.filter(t=>t.playerIndex===pi&&t.state==="home"),placed=home.slice(0,bonus);
+          placed.forEach(t=>{t.state="track";t.step=0;t.travel=0;}); g.dice=bonus;
+          const result=applyMove(g,placed[0].id); if(result.logMsg)addLog(g,result.logMsg); addLog(g,`${pName} automatically brought out ${placed.length} token(s).`);
+          if(g.phase==="finished"){touch(live);emitState(live);}else queueTurnGap(live,pi,movementDuration(live,g.lastEvent));
+        }else if(bonus===5){
+          const t=g.tokens.find(x=>x.playerIndex===pi&&x.state==="home"); t.state="track";t.step=0;t.travel=0;g.dice=5;
+          const result=applyMove(g,t.id);if(result.logMsg)addLog(g,result.logMsg);
+          if(g.phase==="finished"){touch(live);emitState(live);}else queueTurnGap(live,pi,movementDuration(live,g.lastEvent));
+        }else{
+          g.openingBoostPending=true;g.openingBoostChoice=true;g.dice=6;g.phase="await_opening_choice";g.transition=null;g.lockedUntil=null;
+          addLog(g,`${pName} must choose opening Option A or B.`);emitStable(live);
+        }
+      });
+      cb?.({ok:true,rolling:true}); return;
     }
-    addLog(gs,`${pName} rolled ${face}.`);gs.movableTokenIds=computeMovable(gs);
-    if(!gs.movableTokenIds.length){addLog(gs,`${pName} has no legal move — turn skipped.`);gs.dice=null;advanceTurn(gs);touch(room);emitState(room);scheduleTurnTimer(room);return cb?.({ok:true,face,noMoves:true});}
-    gs.phase="await_token";
-    if(gs.movableTokenIds.length===1){const result=applyMove(gs,gs.movableTokenIds[0]);if(result.logMsg)addLog(gs,result.logMsg);}
-    touch(room);emitState(room);scheduleTurnTimer(room);cb?.({ok:true,face});
+
+    beginRolling(room,pi,roll,live=>{
+      const g=live.game;if(!g||g.current!==pi)return;
+      addLog(g,`${pName} rolled ${face}.`);g.movableTokenIds=computeMovable(g);
+      if(!g.movableTokenIds.length){resolveNoMove(live,pi,face);return;}
+      if(g.movableTokenIds.length===1){applyAndQueueMove(live,pi,g.movableTokenIds[0]);return;}
+      g.phase="await_token";g.transition=null;g.lockedUntil=null;emitStable(live);
+    });
+    cb?.({ok:true,rolling:true});
   });
 
   socket.on("player:openingChoice",({code,option}={},cb)=>{
     const room=rooms.get(String(code||""));if(!room||room.phase!=="playing")return cb?.({ok:false,msg:"No active game"});
     const gs=room.game,pi=gameIndexForSocket(room,socket);if(!gs||gs.phase!=="await_opening_choice"||pi!==gs.current)return cb?.({ok:false,msg:"Opening choice not available"});
     if(option!=="A"&&option!=="B")return cb?.({ok:false,msg:"Invalid opening option"});
-    const pName=gs.players[pi].displayName,home=gs.tokens.filter(t=>t.playerIndex===pi&&t.state==="home");gs.openingBoostPending=false;gs.openingBoostChoice=false;
+    clearFlow(room);const pName=gs.players[pi].displayName,home=gs.tokens.filter(t=>t.playerIndex===pi&&t.state==="home");gs.openingBoostPending=false;gs.openingBoostChoice=false;
     if(option==="A"){
-      const placed=home.slice(0,2);placed.forEach(t=>{t.state="track";t.step=0;t.travel=0;});gs.dice=null;gs.phase="await_roll";addLog(gs,`${pName} chose Option A: ${placed.length} token(s) out, then rolls again.`);
+      const placed=home.slice(0,2);placed.forEach(t=>{t.state="track";t.step=0;t.travel=0;});gs.dice=null;
+      gs.lastEvent={type:"opening_option",option:"A",playerIndex:pi,placedTokenIds:placed.map(t=>t.id),at:now()};
+      addLog(gs,`${pName} chose Option A: exactly 2 tokens out, then rolls again.`);
+      queueTurnGap(room,pi,timingFor(room).resolve+timingFor(room).hop);
     }else{
-      const t=home[0];t.state="track";t.step=0;t.travel=0;gs.dice=6;const result=applyMove(gs,t.id);if(result.logMsg)addLog(gs,result.logMsg);if(gs.phase!=="finished"){gs.current=pi;gs.phase="await_roll";}addLog(gs,`${pName} chose Option B and rolls again.`);
+      const t=home[0];t.state="track";t.step=0;t.travel=0;gs.dice=6;const result=applyMove(gs,t.id);if(result.logMsg)addLog(gs,result.logMsg);addLog(gs,`${pName} chose Option B and rolls again.`);
+      if(gs.phase==="finished"){touch(room);emitState(room);}else queueTurnGap(room,pi,movementDuration(room,gs.lastEvent));
     }
-    touch(room);emitState(room);scheduleTurnTimer(room);cb?.({ok:true});
+    cb?.({ok:true});
   });
 
   socket.on("player:move",({code,tokenId}={},cb)=>{
     const room=rooms.get(String(code||""));if(!room||room.phase!=="playing")return cb?.({ok:false,msg:"No active game"});
     const gs=room.game,pi=gameIndexForSocket(room,socket);if(!gs||gs.phase!=="await_token")return cb?.({ok:false,msg:"It is not time to select a token"});
     if(pi!==gs.current)return cb?.({ok:false,msg:"It is not your turn"});if(!gs.movableTokenIds.includes(tokenId))return cb?.({ok:false,msg:"That token cannot move"});
-    const result=applyMove(gs,tokenId);if(result.logMsg)addLog(gs,result.logMsg);touch(room);emitState(room);scheduleTurnTimer(room);cb?.({ok:true});
+    clearFlow(room);applyAndQueueMove(room,pi,tokenId);cb?.({ok:true});
   });
 
   socket.on("disconnect",()=>{
@@ -553,7 +702,7 @@ setInterval(()=>{
   const cutoff=now()-ROOM_TTL_MS;
   for(const [code,room] of rooms){
     const noConnected=!room.hostSocketId&&!room.players.some(p=>p.connected);
-    if(noConnected&&(room.updatedAt||0)<cutoff){clearTimeout(turnTimers.get(code));turnTimers.delete(code);rooms.delete(code);}
+    if(noConnected&&(room.updatedAt||0)<cutoff){clearTimeout(turnTimers.get(code));turnTimers.delete(code);clearTimeout(flowTimers.get(code));flowTimers.delete(code);rooms.delete(code);}
   }
   schedulePersist();
 },60*60*1000).unref();

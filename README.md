@@ -87,7 +87,7 @@ Useful environment variables:
 Build command:
 
 ```bash
-npm install
+npm install --registry=https://registry.npmjs.org --no-audit --no-fund
 ```
 
 Start command:
@@ -108,17 +108,19 @@ Use HTTPS for a public deployment. Keep one server instance unless shared state 
 - Completing a token now awards the specified extra turn.
 - Phone vibration uses the Web Vibration API where supported. iOS may not expose vibration to web pages; the interface remains fully functional without it.
 
-## V3.2 psychology-led game-feel changes
+## V3.3 fairness, pacing and information-design changes
 
-The rules are unchanged. Presentation now treats the TV as the shared stage rather than merely a state display.
+The house rules remain unchanged. This release tightens who can see tactical assistance, makes turns animation-safe, slows the default pace slightly and replaces the shared TV dice presentation.
 
-- High-stakes rolls use a short anticipation hold before the TV dice reveals its face. The extra pause is reserved for meaningful moments such as breaking out of base, a possible first capture, exact HOME finishes and a possible third consecutive six.
-- Roll-driven automatic movement waits for the TV dice presentation, so tokens no longer reveal the result before the dice does.
-- Captures have stronger visual weight than ordinary sixes: heavy board impact, red flash, victim-card reaction, larger particles, shrink/explosion and a delayed flight back to base.
-- The TV includes a live commentator panel that surfaces capture requirements, immediate danger, near-HOME situations, captures, fouls and finishing moments.
-- The server computes one-roll capture threats. Exposed tokens receive a restrained red warning ring and threat count on the board; phones also explain the risk.
-- Board Progress is server-derived and uses cumulative token travel so completing an outer circuit before the mandatory capture no longer makes the progress bar collapse when the relative track step wraps to zero.
-- Captures still reduce progress because the captured token genuinely returns to base.
-- All presentation durations come from one central Relaxed / Standard / Quick / Turbo timing model.
-- Winner presentation is deliberately heavier than ordinary mid-game effects: board lighting, crown animation, fireworks, champion statistics and final standings.
-- Phone token controls provide more specific explanations for capture-bonus locks, HOME overshoots, the mandatory-capture gate and immediate capture danger.
+- Capture-risk assistance is private. The TV never marks exposed tokens and never publishes calculated threat counts. When enabled, only the owner receives a warning on their phone about their own vulnerable token(s).
+- The host can switch **Private capture-risk warnings** ON or OFF during the match. The default is ON.
+- The host player cards show **HOME lane LOCKED** or **HOME lane UNLOCKED** for every active player, based on the player-wide mandatory-capture gate.
+- The server now locks interaction through the full presentation cycle. Rolls move through authoritative rolling, movement/resolution and turn-gap phases before the next roll can be requested. A phone cannot get ahead of the TV animation.
+- Standard speed is slightly slower. Relaxed, Standard, Quick and Turbo still scale the same central timing model.
+- The TV dice has been replaced by a premium 3D cube with a physical-looking tumble, hop/bounce and exact final orientation for the server-generated result. Phones do not render a competing animated die.
+- High-stakes rolls retain a restrained anticipation beat, while ordinary rolls remain comparatively quick.
+- Automatic movement still waits for the TV dice presentation, and captures/HOME/foul effects finish before control is released.
+- Board Progress remains cumulative across pre-capture track wrapping, so completing a circuit does not create a false progress regression.
+- Captures still reduce progress because the captured token genuinely returns to its yard.
+- The TV remains a shared public-information stage. Tactical calculations that are not naturally public remain on the relevant player's controller only.
+- Phone token cards continue to explain why a token cannot move, including capture-lock, exact-finish and mandatory-capture restrictions.
