@@ -19,10 +19,10 @@ const ROOM_TTL_MS = Number(process.env.ROOM_TTL_MS || 12 * 60 * 60 * 1000);
 const COLOURS = new Set(["G", "Y", "B", "R"]);
 const TURN_ORDER = ["Y", "B", "R", "G"];
 const GAME_TIMING = {
-  relaxed:  { dice:1500, reveal:180, highReveal:760, betweenDice:180, hop:280, capture:1850, impact:420, finish:900, foul:1350, resolve:300, turnGap:1200, fx:1850, winner:1200 },
-  standard: { dice:1250, reveal:160, highReveal:620, betweenDice:150, hop:215, capture:1550, impact:350, finish:760, foul:1150, resolve:260, turnGap:950,  fx:1700, winner:1000 },
-  quick:    { dice:820,  reveal:110, highReveal:430, betweenDice:110, hop:135, capture:1050, impact:240, finish:540, foul:800,  resolve:190, turnGap:600,  fx:1250, winner:700 },
-  turbo:    { dice:520,  reveal:75,  highReveal:270, betweenDice:80,  hop:82,  capture:700,  impact:160, finish:380, foul:560,  resolve:130, turnGap:360,  fx:900,  winner:460 },
+  relaxed:  { dice:1550, reveal:200, highReveal:800, betweenDice:190, hop:320, capture:1950, impact:450, finish:980, foul:1420, resolve:340, turnGap:1500, fx:1950, winner:1250 },
+  standard: { dice:1250, reveal:180, highReveal:650, betweenDice:160, hop:250, capture:1650, impact:380, finish:840, foul:1220, resolve:320, turnGap:1250, fx:1750, winner:1050 },
+  quick:    { dice:840,  reveal:120, highReveal:450, betweenDice:115, hop:150, capture:1120, impact:260, finish:580, foul:840,  resolve:210, turnGap:720,  fx:1300, winner:720 },
+  turbo:    { dice:540,  reveal:80,  highReveal:290, betweenDice:85,  hop:90,  capture:740,  impact:170, finish:400, foul:590,  resolve:140, turnGap:440,  fx:930,  winner:480 },
 };
 
 app.disable("x-powered-by");

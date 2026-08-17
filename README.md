@@ -124,3 +124,17 @@ The house rules remain unchanged. This release tightens who can see tactical ass
 - Captures still reduce progress because the captured token genuinely returns to its yard.
 - The TV remains a shared public-information stage. Tactical calculations that are not naturally public remain on the relevant player's controller only.
 - Phone token cards continue to explain why a token cannot move, including capture-lock, exact-finish and mandatory-capture restrictions.
+
+
+## V3.4 dice and turn-transition correction
+
+This release addresses the host presentation problems found during live testing.
+
+- The host die no longer uses a full cube rotation that can collapse into an edge-on sliver. It uses a perspective 3D-styled die with a stable readable face throughout the animation.
+- While rolling, the die hops, tilts and spins around the screen-facing axis while intermediate faces change; it can no longer visually disappear side-on.
+- The final server-generated result is held clearly and remains visible after the roll instead of leaving an empty dice tray.
+- The dice tray now labels its state: `ROLLING`, `RESULT`, `MOVE`, `NEXT`, `EXTRA TURN` or `READY`.
+- `RESOLVING` and `TURN_GAP` now have a dedicated visible transition card on the host with a progress bar. The next player is announced before their controls unlock.
+- The server-side interaction lock remains authoritative, so the visual gap corresponds to a real period in which phones cannot roll or move.
+- Standard movement is slightly slower again: token hops, resolution effects and the between-turn pause have more breathing room.
+- Relaxed, Quick and Turbo remain available from the host settings.
