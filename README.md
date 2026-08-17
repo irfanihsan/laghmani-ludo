@@ -29,8 +29,7 @@ public/
   index.html
   host.html
   play.html
-test/
-  integration.test.js
+PSYCHOLOGY_GAME_FEEL_UPDATE.md
 ```
 
 ## Run locally
@@ -46,14 +45,6 @@ Open:
 - Phone controller: `http://localhost:3000/play`
 
 Phones on the same Wi-Fi use the computer's local IP, for example `http://192.168.1.20:3000/play`.
-
-## Tests
-
-```bash
-npm test
-```
-
-The integration test checks room creation, secure host control, player session tokens, turn order, late-join rejection and reconnection protection.
 
 ## Online persistence
 
@@ -116,3 +107,18 @@ Use HTTPS for a public deployment. Keep one server instance unless shared state 
 - Token hopping, capture return, three-sixes foul, HOME completion and winner effects are host-rendered.
 - Completing a token now awards the specified extra turn.
 - Phone vibration uses the Web Vibration API where supported. iOS may not expose vibration to web pages; the interface remains fully functional without it.
+
+## V3.2 psychology-led game-feel changes
+
+The rules are unchanged. Presentation now treats the TV as the shared stage rather than merely a state display.
+
+- High-stakes rolls use a short anticipation hold before the TV dice reveals its face. The extra pause is reserved for meaningful moments such as breaking out of base, a possible first capture, exact HOME finishes and a possible third consecutive six.
+- Roll-driven automatic movement waits for the TV dice presentation, so tokens no longer reveal the result before the dice does.
+- Captures have stronger visual weight than ordinary sixes: heavy board impact, red flash, victim-card reaction, larger particles, shrink/explosion and a delayed flight back to base.
+- The TV includes a live commentator panel that surfaces capture requirements, immediate danger, near-HOME situations, captures, fouls and finishing moments.
+- The server computes one-roll capture threats. Exposed tokens receive a restrained red warning ring and threat count on the board; phones also explain the risk.
+- Board Progress is server-derived and uses cumulative token travel so completing an outer circuit before the mandatory capture no longer makes the progress bar collapse when the relative track step wraps to zero.
+- Captures still reduce progress because the captured token genuinely returns to base.
+- All presentation durations come from one central Relaxed / Standard / Quick / Turbo timing model.
+- Winner presentation is deliberately heavier than ordinary mid-game effects: board lighting, crown animation, fireworks, champion statistics and final standings.
+- Phone token controls provide more specific explanations for capture-bonus locks, HOME overshoots, the mandatory-capture gate and immediate capture danger.

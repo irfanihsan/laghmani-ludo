@@ -164,6 +164,10 @@ input:focus,select:focus{border-color:rgba(245,158,11,.5);background:rgba(255,25
 ::-webkit-scrollbar{width:3px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:rgba(255,255,255,.1);border-radius:2px}
 
 .roll-result{min-width:86px;text-align:right;font-size:14px;font-weight:900;color:#fbbf24}.roll-result strong{font-size:28px;display:block;line-height:1}.extra-note{font-size:11px;color:#fbbf24;font-weight:800;margin-top:3px}.tok-btn.legal{animation:selectionPulse 1.05s ease-in-out infinite}@keyframes selectionPulse{50%{transform:translateY(-3px);box-shadow:0 0 0 5px rgba(245,158,11,.08),0 10px 30px rgba(245,158,11,.28)}}
+
+.tok-btn.danger{border-color:rgba(239,68,68,.55);box-shadow:0 0 0 1px rgba(239,68,68,.12),0 8px 24px rgba(239,68,68,.08)}.tok-btn.danger.legal{border-color:rgba(245,158,11,.65);box-shadow:0 0 0 3px rgba(239,68,68,.1),0 8px 28px rgba(245,158,11,.2)}
+.impact-card{padding:14px 16px;border-radius:16px;border:1px solid rgba(239,68,68,.4);background:linear-gradient(135deg,rgba(239,68,68,.15),rgba(239,68,68,.045));font-size:13px;font-weight:800;line-height:1.45;animation:impactIn .35s cubic-bezier(.2,1.3,.3,1)}.impact-card.good{border-color:rgba(245,158,11,.42);background:linear-gradient(135deg,rgba(245,158,11,.13),rgba(245,158,11,.04))}@keyframes impactIn{from{opacity:0;transform:translateY(-8px) scale(.96)}to{opacity:1;transform:none}}
+
 </style>
 </head>
 <body>
@@ -385,7 +389,12 @@ function runPhoneHaptics(state, previousState){
     const turnStarted=mi>=0&&gs.current===mi&&(!prevGs||prevMi<0||prevGs.current!==prevMi||previousState.phase!==state.phase);
     const eventChanged=gs.lastEvent&&(!prevGs||JSON.stringify(gs.lastEvent)!==JSON.stringify(prevGs.lastEvent));
     const rollChanged=gs.lastRoll&&(!prevGs||!prevGs.lastRoll||gs.lastRoll.id!==prevGs.lastRoll.id);
-    if(eventChanged&&gs.lastEvent.type==="capture") navigator.vibrate([90,45,140]);
+    if(eventChanged&&gs.lastEvent.type==="capture"){
+      const victims=gs.lastEvent.capturedPlayerIndices||[];
+      if(victims.includes(mi)) navigator.vibrate([180,55,220,65,280]);
+      else if(gs.lastEvent.playerIndex===mi) navigator.vibrate([110,40,150]);
+      else navigator.vibrate([55,35,80]);
+    }
     else if(eventChanged&&gs.lastEvent.type==="foul") navigator.vibrate([180,70,180,70,260]);
     else if(rollChanged&&gs.lastRoll.finalFace===6) navigator.vibrate([70,35,70]);
     else if(turnStarted) navigator.vibrate(70);
@@ -473,6 +482,13 @@ function renderGame(state){
   const roll=gs.lastRoll,rolledBy=roll?gs.players[roll.playerIndex]:null;
   const rollText=roll?(roll.playerIndex===mi?`You rolled <strong>${roll.finalFace}</strong>`:`${esc(rolledBy?.displayName||"Player")} rolled <strong>${roll.finalFace}</strong>`):"Waiting for roll";
   html+=`<div class="turn-card${isMyTurn?" mine":""}"><div class="tc-dot" style="background:${cur?cur.color:"#888"}"></div><div class="tc-text"><div class="tc-name">${isMyTurn?"Your turn":esc(cur?cur.displayName:"?")+"'s turn"}</div><div class="tc-sub">${phaseHint(gs,isMyTurn,mi)}</div>${gs.phase==="await_roll"&&isMyTurn&&gs.lastDice===6?'<div class="extra-note">Extra turn — roll again</div>':''}</div><div class="roll-result">${rollText}</div></div>`;
+  const ev=gs.lastEvent,evFresh=ev?.at&&Date.now()-ev.at<4500;
+  if(evFresh&&ev.type==="capture"){
+    const victims=ev.capturedPlayerIndices||[],attacker=gs.players[ev.playerIndex]?.displayName||"Player";
+    if(victims.includes(mi)) html+=`<div class="impact-card">💥 Your token was captured by ${esc(attacker)} and sent back to base.</div>`;
+    else if(ev.playerIndex===mi) html+=`<div class="impact-card good">💥 Capture! You sent ${ev.count||1} token${ev.count===1?"":"s"} back to base.</div>`;
+  } else if(evFresh&&ev.type==="foul"&&ev.playerIndex===mi) html+=`<div class="impact-card">💣 Three sixes — your turn chain was undone.</div>`;
+  else if(evFresh&&ev.type==="finish_token"&&ev.playerIndex===mi) html+=`<div class="impact-card good">✨ Token HOME — you earned another roll.</div>`;
 
   // ── Opening boost choice panel (phone decides Option A or B) ───────────────
   if(isMyTurn && gs.openingBoostChoice && gs.phase==="await_opening_choice"){
@@ -513,17 +529,17 @@ function renderGame(state){
       html+=`<div class="sect-label">${gs.phase==="await_token"?"Pick a token to move":"Your tokens"}</div>
       <div class="tokens-grid">
         ${myToks.map(t=>{
-          const isLeg=legal.includes(t.id);
+          const isLeg=legal.includes(t.id),danger=Number(gs.dangerCounts?.[t.id]||0);
           const col=myGP?myGP.color:"#888";
           const hasAv=myGP&&myGP.avatar;
-          return `<button class="tok-btn${isLeg?" legal":""}" ${isLeg?"":"disabled"} onclick="${isLeg?`doMove('${t.id}')`:""}" >
+          return `<button class="tok-btn${isLeg?" legal":""}${danger?" danger":""}" ${isLeg?"":"disabled"} onclick="${isLeg?`doMove('${t.id}')`:""}" >
             ${isLeg?'<div class="legal-badge">★</div>':""}
             <div class="tok-circle" style="background:rgba(${hexRgb(col)},.18);border-color:${col}">
               ${hasAv?`<img src="${myGP.avatar}"/><div class="tok-num-badge" style="background:${col};color:#fff">${({A:"♥",B:"♦",C:"♣",D:"♠"}[t.label]||t.label)}</div>`
                      :`<span style="color:${col}">${({A:"♥",B:"♦",C:"♣",D:"♠"}[t.label]||t.label)}</span>`}
             </div>
             <div class="tok-name">Token ${({A:"♥",B:"♦",C:"♣",D:"♠"}[t.label]||t.label)}</div>
-            <div class="tok-state">${isLeg?tokStateLbl(t):tokenReason(t,gs,isMyTurn)}</div>
+            <div class="tok-state">${isLeg?(danger?`⚠ At risk · ${tokStateLbl(t)}`:tokStateLbl(t)):tokenReason(t,gs,isMyTurn,mi)}</div>
           </button>`;
         }).join("")}
       </div>`;
@@ -562,13 +578,16 @@ function tokStateLbl(t){
   if(t.state==="finish") return "✅ Finished!";
   return t.state;
 }
-function tokenReason(t,gs,isMyTurn){
+function tokenReason(t,gs,isMyTurn,mi){
   if(t.state==="finish") return "Already finished";
-  if(!isMyTurn) return "Wait for your turn";
-  if(gs.phase==="await_roll") return tokStateLbl(t);
+  if(!isMyTurn) return Number(gs.dangerCounts?.[t.id]||0)>0?"⚠ Exposed to capture":"Wait for your turn";
+  if(gs.phase==="await_roll") return Number(gs.dangerCounts?.[t.id]||0)>0?"⚠ Exposed to capture":tokStateLbl(t);
+  if((gs.turnLockedTokens||[]).includes(t.id)) return "Capture bonus: choose a different token";
   if(t.state==="home"&&gs.lastDice!==6) return "Needs a 6 to leave home";
-  if(t.state==="lane"&&t.step+(gs.lastDice||0)>5) return "The roll would overshoot home";
-  if(Array.isArray(gs.movableTokenIds)&&!gs.movableTokenIds.includes(t.id)) return "Unavailable under the current rule";
+  if(t.state==="lane"&&t.step+(gs.lastDice||0)>5) return "The roll would overshoot HOME";
+  if(t.state==="track"&&mi>=0&&!gs.stats?.[mi]?.hasCaptured&&Math.max(t.travel||0,t.step||0)>=45) return "HOME locked — capture an opponent first";
+  const danger=Number(gs.dangerCounts?.[t.id]||0);if(danger>0)return `⚠ ${danger} opponent${danger===1?"":"s"} can capture this token next roll`;
+  if(Array.isArray(gs.movableTokenIds)&&!gs.movableTokenIds.includes(t.id)) return "This token cannot use the current roll";
   return tokStateLbl(t);
 }
 

@@ -106,6 +106,16 @@ function loadRooms(){
       room.hostDisconnectedAt = now();
       room.players ||= [];
       for(const p of room.players){ p.socketId=null; p.connected=false; p.forfeited=!!p.forfeited; }
+      if(room.game){
+        room.game.tokens ||= [];
+        for(const t of room.game.tokens){
+          if(!Number.isFinite(t.travel)){
+            t.travel = t.state==="finish" ? 58 : t.state==="lane" ? 52 + Math.max(0,t.step||0) : t.state==="track" ? Math.max(0,t.step||0) : 0;
+          }
+        }
+        room.game.turnLockedTokens ||= [];
+        room.game.sixStreak ||= 0;
+      }
       rooms.set(room.code, room);
     }
     console.log(`Restored ${rooms.size} room(s) from ${DATA_FILE}`);
@@ -136,7 +146,7 @@ function initGame(room){
   });
   const tokens=[];
   players.forEach((p, pi) => ["A","B","C","D"].forEach(label => tokens.push({
-    id:`${p.id}_${label}`, playerIndex:pi, label, state:"home", step:0, finishSlot:null,
+    id:`${p.id}_${label}`, playerIndex:pi, label, state:"home", step:0, finishSlot:null, travel:0,
   })));
   const stats = players.map(() => ({ sixes:0, rolls:0, kills:0, deaths:0, finished:0, hasCaptured:false, openingUsed:false }));
   return {
@@ -200,6 +210,44 @@ function planMove(t, die, gs){
   }
   return {newState:t.state,newStep:t.step,captured:[],finishesToken:false};
 }
+function tokenTravelValue(t){
+  if(t.state==="finish") return 58;
+  if(t.state==="lane") return 52 + Math.max(0, t.step||0);
+  if(t.state==="track") return Math.min(51, Math.max(Number.isFinite(t.travel)?t.travel:(t.step||0), t.step||0));
+  return 0;
+}
+function computeProgress(gs){
+  if(!gs) return [];
+  const gateWeight=8, tokenMax=58, totalMax=tokenMax*4+gateWeight;
+  return gs.players.map((_,pi)=>{
+    const tokenPoints=gs.tokens.filter(t=>t.playerIndex===pi).reduce((sum,t)=>sum+tokenTravelValue(t),0);
+    const gate=gs.stats[pi]?.hasCaptured?gateWeight:0;
+    return Math.max(0,Math.min(100,Math.round((tokenPoints+gate)/totalMax*100)));
+  });
+}
+function computeDanger(gs){
+  const safe=buildSafeSet(), counts={};
+  if(!gs) return {ids:[],counts};
+  for(const victim of gs.tokens){
+    if(victim.state!=="track") continue;
+    const victimAbs=absIdx(victim.playerIndex,victim.step,gs.players);
+    if(safe.has(victimAbs)) continue;
+    const threateningPlayers=new Set();
+    for(const attacker of gs.tokens){
+      if(attacker.playerIndex===victim.playerIndex || attacker.state!=="track" || isDone(gs,attacker.playerIndex)) continue;
+      const eligible=!!gs.stats[attacker.playerIndex]?.hasCaptured;
+      for(let die=1;die<=6;die++){
+        const total=(attacker.step||0)+die;
+        if(eligible && total>51) continue; // that roll would enter HOME, not capture on track
+        const nextStep=eligible?total:(total%52);
+        if(absIdx(attacker.playerIndex,nextStep,gs.players)===victimAbs){ threateningPlayers.add(attacker.playerIndex); break; }
+      }
+    }
+    if(threateningPlayers.size) counts[victim.id]=threateningPlayers.size;
+  }
+  return {ids:Object.keys(counts),counts};
+}
+
 function nextFinishSlot(gs, pi){
   const used=new Set(gs.tokens.filter(t => t.playerIndex===pi && t.state==="finish").map(t=>t.finishSlot).filter(Number.isInteger));
   for(let i=0;i<4;i++) if(!used.has(i)) return i;
@@ -212,7 +260,7 @@ function finishGameIfResolved(gs){
     const sole=active[0].i;
     if(!gs.winnerOrder.includes(sole)) gs.winnerOrder.unshift(sole);
     gs.phase="finished";
-    gs.lastEvent={type:"game_finished",winner:sole,loser:null};
+    gs.lastEvent={type:"game_finished",winner:sole,loser:null,at:now()};
     addLog(gs,`🏆 ${gs.players[sole].displayName} wins by forfeit.`);
     return true;
   }
@@ -221,7 +269,7 @@ function finishGameIfResolved(gs){
     gs.winnerOrder.push(unfinished[0].i);
     addLog(gs, `☠️ ${gs.players[unfinished[0].i].displayName} finishes in last place.`);
     gs.phase="finished";
-    gs.lastEvent={type:"game_finished",winner:gs.winnerOrder[0],loser:unfinished[0].i};
+    gs.lastEvent={type:"game_finished",winner:gs.winnerOrder[0],loser:unfinished[0].i,at:now()};
     return true;
   }
   if(active.length && gs.winnerOrder.length >= active.length){ gs.phase="finished"; return true; }
@@ -232,13 +280,18 @@ function applyMove(gs, tokenId){
   const t=gs.tokens.find(x=>x.id===tokenId);
   if(!t) throw new Error("Token not found");
   const die=gs.dice, pi=t.playerIndex, pName=gs.players[pi].displayName, plan=planMove(t,die,gs);
-  const from={state:t.state,step:t.step,finishSlot:t.finishSlot};
+  const from={state:t.state,step:t.step,finishSlot:t.finishSlot,travel:Number.isFinite(t.travel)?t.travel:tokenTravelValue(t)};
   const capturedIds=plan.captured.map(v=>v.id);
+  const priorState=t.state, priorTravel=Number.isFinite(t.travel)?t.travel:tokenTravelValue(t);
   t.state=plan.newState; t.step=plan.newStep;
+  if(priorState==="home") t.travel=0;
+  else if(t.state==="lane") t.travel=52+Math.max(0,t.step||0);
+  else if(t.state==="finish") t.travel=58;
+  else t.travel=Math.max(0,priorTravel+(die||0));
   if(plan.finishesToken) t.finishSlot=nextFinishSlot(gs,pi);
   let capturedCount=0;
   for(const victim of plan.captured){
-    victim.state="home"; victim.step=0; victim.finishSlot=null;
+    victim.state="home"; victim.step=0; victim.finishSlot=null; victim.travel=0;
     gs.stats[pi].kills++; gs.stats[victim.playerIndex].deaths++; capturedCount++;
   }
   if(capturedCount){ gs.stats[pi].hasCaptured=true; if(!gs.turnLockedTokens.includes(tokenId)) gs.turnLockedTokens.push(tokenId); }
@@ -246,11 +299,11 @@ function applyMove(gs, tokenId){
   let wonNow=false;
   if(gs.stats[pi].finished===4 && !gs.winnerOrder.includes(pi)){ gs.winnerOrder.push(pi); wonNow=true; }
   let msg=plan.finishesToken?`🏁 ${pName} finished token ${t.label}!`:capturedCount?`💥 ${pName} captured ${capturedCount} token(s)! Bonus roll.`:(t.state==="track"&&plan.newStep===0)?`${pName} brought out ${t.label}.`:`${pName} moved ${t.label} by ${die}.`;
-  gs.lastEvent=capturedCount?{type:"capture",playerIndex:pi,count:capturedCount,tokenId,die,from,to:{state:t.state,step:t.step,finishSlot:t.finishSlot},capturedTokenIds:capturedIds}:plan.finishesToken?{type:"finish_token",playerIndex:pi,tokenId,die,from,to:{state:t.state,step:t.step,finishSlot:t.finishSlot}}: {type:"move",playerIndex:pi,tokenId,die,from,to:{state:t.state,step:t.step,finishSlot:t.finishSlot}};
+  gs.lastEvent=capturedCount?{type:"capture",playerIndex:pi,count:capturedCount,tokenId,die,from,to:{state:t.state,step:t.step,finishSlot:t.finishSlot,travel:t.travel},capturedTokenIds:capturedIds,capturedPlayerIndices:[...new Set(plan.captured.map(v=>v.playerIndex))],at:now()}:plan.finishesToken?{type:"finish_token",playerIndex:pi,tokenId,die,from,to:{state:t.state,step:t.step,finishSlot:t.finishSlot,travel:t.travel},at:now()}: {type:"move",playerIndex:pi,tokenId,die,from,to:{state:t.state,step:t.step,finishSlot:t.finishSlot,travel:t.travel},at:now()};
   if(wonNow){
     const rank=gs.winnerOrder.length;
     msg += rank===1?` 🏆 ${pName} WINS the game!`:` ${pName} finished #${rank}.`;
-    gs.lastEvent={type:"placement",playerIndex:pi,rank,finishedToken:plan.finishesToken,tokenId,die,from,to:{state:t.state,step:t.step,finishSlot:t.finishSlot}};
+    gs.lastEvent={type:"placement",playerIndex:pi,rank,finishedToken:plan.finishesToken,tokenId,die,from,to:{state:t.state,step:t.step,finishSlot:t.finishSlot,travel:t.travel},at:now()};
   }
   const keepTurn=die===6||capturedCount>0||plan.finishesToken;
   gs.dice=null; gs.movableTokenIds=[];
@@ -282,11 +335,13 @@ function syncRoomPhase(room){ if(room.game?.phase==="finished") room.phase="fini
 function publicState(room){
   const gs=room.game, winnerRanks={};
   if(gs) gs.winnerOrder.forEach((pi,i)=>winnerRanks[pi]=i+1);
+  const danger=gs?computeDanger(gs):{ids:[],counts:{}};
+  const progress=gs?computeProgress(gs):[];
   return {
     code:room.code, phase:room.phase,
     settings:{mandatoryCapture:true,openingBoost:true,threeSixesFoul:true,captureBonus:true,finishBonus:true,exactFinish:true,turnOrder:"Y-B-R-G",turnTimeoutSeconds:Math.round(TURN_TIMEOUT_MS/1000),speed:room.speed||"standard"},
     players:room.players.map(p=>({id:p.id,name:p.name,colour:p.colour,connected:!!p.connected,avatar:p.avatar||null,hasAvatar:!!p.avatar,forfeited:!!p.forfeited,disconnectDeadline:p.disconnectDeadline||null})),
-    game:gs?{phase:gs.phase,players:gs.players,tokens:gs.tokens,stats:gs.stats,current:gs.current,dice:gs.dice,lastDice:gs.lastDice,movableTokenIds:gs.movableTokenIds,winnerOrder:gs.winnerOrder,winners:gs.winnerOrder,winnerRanks,openingBoostPending:gs.openingBoostPending,openingBoostChoice:gs.openingBoostChoice,log:gs.log.slice(0,30),lastEvent:gs.lastEvent,lastRoll:gs.lastRoll,actionNumber:gs.actionNumber}:null,
+    game:gs?{phase:gs.phase,players:gs.players,tokens:gs.tokens,stats:gs.stats,current:gs.current,dice:gs.dice,lastDice:gs.lastDice,movableTokenIds:gs.movableTokenIds,turnLockedTokens:gs.turnLockedTokens||[],sixStreak:gs.sixStreak||0,winnerOrder:gs.winnerOrder,winners:gs.winnerOrder,winnerRanks,openingBoostPending:gs.openingBoostPending,openingBoostChoice:gs.openingBoostChoice,progress,dangerTokenIds:danger.ids,dangerCounts:danger.counts,log:gs.log.slice(0,30),lastEvent:gs.lastEvent,lastRoll:gs.lastRoll,actionNumber:gs.actionNumber}:null,
     playerDefs:PLAYER_DEFS.map(d=>({...d})), track:TRACK,
   };
 }
@@ -360,7 +415,7 @@ io.on("connection",socket=>{
     if(eligible.length<2) return cb?.({ok:false,msg:"Need at least 2 players"});
     room.phase="playing"; room.game=initGame(room);
     const first=room.game.players[0]; addLog(room.game,`Game started! ${first.displayName} (${defByKey(first.key).name}) goes first.`);
-    room.game.lastEvent={type:"game_started",playerIndex:0}; touch(room); emitState(room); scheduleTurnTimer(room); cb?.({ok:true});
+    room.game.lastEvent={type:"game_started",playerIndex:0,at:now()}; touch(room); emitState(room); scheduleTurnTimer(room); cb?.({ok:true});
   });
   socket.on("host:restart",({code,hostToken}={},cb)=>{
     const room=rooms.get(String(code||"")); if(!requireHost(room,socket,hostToken)) return cb?.({ok:false,msg:"Host authorisation failed"});
@@ -438,7 +493,7 @@ io.on("connection",socket=>{
     if(gs.sixStreak>=3){
       const chain=gs.turnChainSnapshot,savedUndo=gs.undoStack,rolls=gs.stats[pi].rolls,sixes=gs.stats[pi].sixes;
       Object.assign(gs,chain,{undoStack:savedUndo,turnChainSnapshot:null}); gs.stats[pi].rolls=rolls;gs.stats[pi].sixes=sixes;
-      addLog(gs,`🚨 ${pName} rolled three 6s — foul. The whole turn chain was undone.`);gs.lastEvent={type:"foul",playerIndex:pi};advanceTurn(gs);
+      addLog(gs,`🚨 ${pName} rolled three 6s — foul. The whole turn chain was undone.`);gs.lastEvent={type:"foul",playerIndex:pi,at:now()};advanceTurn(gs);
       touch(room);emitState(room);scheduleTurnTimer(room);return cb?.({ok:true,face,foul:true});
     }
     if(face===6&&!gs.stats[pi].openingUsed&&gs.tokens.filter(t=>t.playerIndex===pi).every(t=>t.state==="home")){
@@ -448,12 +503,12 @@ io.on("connection",socket=>{
       if(gs.sixStreak>=3){
         const chain=gs.turnChainSnapshot,savedUndo=gs.undoStack,rolls=gs.stats[pi].rolls,sixes=gs.stats[pi].sixes;
         Object.assign(gs,chain,{undoStack:savedUndo,turnChainSnapshot:null});gs.stats[pi].rolls=rolls;gs.stats[pi].sixes=sixes;
-        addLog(gs,`🚨 ${pName} opening boost caused three 6s — foul. Turn chain undone.`);gs.lastEvent={type:"foul",playerIndex:pi};advanceTurn(gs);
+        addLog(gs,`🚨 ${pName} opening boost caused three 6s — foul. Turn chain undone.`);gs.lastEvent={type:"foul",playerIndex:pi,at:now()};advanceTurn(gs);
       }else if(bonus>=1&&bonus<=4){
-        const home=gs.tokens.filter(t=>t.playerIndex===pi&&t.state==="home"),placed=home.slice(0,bonus);placed.forEach(t=>{t.state="track";t.step=0;});
+        const home=gs.tokens.filter(t=>t.playerIndex===pi&&t.state==="home"),placed=home.slice(0,bonus);placed.forEach(t=>{t.state="track";t.step=0;t.travel=0;});
         gs.dice=bonus;const result=applyMove(gs,placed[0].id);if(result.logMsg)addLog(gs,result.logMsg);addLog(gs,`${pName} automatically brought out ${placed.length} token(s).`);
       }else if(bonus===5){
-        const t=gs.tokens.find(x=>x.playerIndex===pi&&x.state==="home");t.state="track";t.step=0;gs.dice=5;const result=applyMove(gs,t.id);if(result.logMsg)addLog(gs,result.logMsg);
+        const t=gs.tokens.find(x=>x.playerIndex===pi&&x.state==="home");t.state="track";t.step=0;t.travel=0;gs.dice=5;const result=applyMove(gs,t.id);if(result.logMsg)addLog(gs,result.logMsg);
       }else{
         gs.openingBoostPending=true;gs.openingBoostChoice=true;gs.dice=6;gs.phase="await_opening_choice";addLog(gs,`${pName} must choose opening Option A or B.`);
       }
@@ -472,9 +527,9 @@ io.on("connection",socket=>{
     if(option!=="A"&&option!=="B")return cb?.({ok:false,msg:"Invalid opening option"});
     const pName=gs.players[pi].displayName,home=gs.tokens.filter(t=>t.playerIndex===pi&&t.state==="home");gs.openingBoostPending=false;gs.openingBoostChoice=false;
     if(option==="A"){
-      const placed=home.slice(0,2);placed.forEach(t=>{t.state="track";t.step=0;});gs.dice=null;gs.phase="await_roll";addLog(gs,`${pName} chose Option A: ${placed.length} token(s) out, then rolls again.`);
+      const placed=home.slice(0,2);placed.forEach(t=>{t.state="track";t.step=0;t.travel=0;});gs.dice=null;gs.phase="await_roll";addLog(gs,`${pName} chose Option A: ${placed.length} token(s) out, then rolls again.`);
     }else{
-      const t=home[0];t.state="track";t.step=0;gs.dice=6;const result=applyMove(gs,t.id);if(result.logMsg)addLog(gs,result.logMsg);if(gs.phase!=="finished"){gs.current=pi;gs.phase="await_roll";}addLog(gs,`${pName} chose Option B and rolls again.`);
+      const t=home[0];t.state="track";t.step=0;t.travel=0;gs.dice=6;const result=applyMove(gs,t.id);if(result.logMsg)addLog(gs,result.logMsg);if(gs.phase!=="finished"){gs.current=pi;gs.phase="await_roll";}addLog(gs,`${pName} chose Option B and rolls again.`);
     }
     touch(room);emitState(room);scheduleTurnTimer(room);cb?.({ok:true});
   });
